@@ -1,0 +1,20 @@
+# Secrets — never commit these
+.streamlit/secrets.toml
+.streamlit/rsa_key.p8
+.streamlit/rsa_key.pub
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# PyCharm
+.idea/
+
+# Scratch / temp / debug output (not part of the app)
+.tmp-*
+.tmp_*
+dist/
+*.log
+*.pid
+
