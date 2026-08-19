@@ -171,7 +171,7 @@ with control_columns[0]:
     if not defensive_seasons:
         st.warning("No match seasons are available.")
         st.stop()
-    preferred_season = "25/26" if "25/26" in defensive_seasons else defensive_seasons[-1]
+    preferred_season = data.preferred_season(defensive_seasons)
     season = st.selectbox(
         "Match Season",
         defensive_seasons,

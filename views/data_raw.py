@@ -19,9 +19,14 @@ seasons = data.list_seasons()
 tab_players, tab_teams, tab_matches = st.tabs(["Players", "Teams", "Matches"])
 
 with tab_players:
-    season = st.selectbox("Season", seasons["players"], index=len(seasons["players"]) - 1, key="players_season")
+    preferred_players_season = data.preferred_season(seasons["players"])
+    season = st.selectbox(
+        "Season", seasons["players"],
+        index=seasons["players"].index(preferred_players_season),
+        key="players_season",
+    )
     players = data.load_players(season=season)
-    st.dataframe(players, use_container_width=True, hide_index=True)
+    st.dataframe(players, width="stretch", hide_index=True)
     st.download_button(
         "Download players.csv",
         players.to_csv(index=False),
@@ -30,9 +35,14 @@ with tab_players:
     )
 
 with tab_teams:
-    season = st.selectbox("Season", seasons["teams"], index=len(seasons["teams"]) - 1, key="teams_season")
+    preferred_teams_season = data.preferred_season(seasons["teams"])
+    season = st.selectbox(
+        "Season", seasons["teams"],
+        index=seasons["teams"].index(preferred_teams_season),
+        key="teams_season",
+    )
     teams = data.load_teams(season=season)
-    st.dataframe(teams, use_container_width=True, hide_index=True)
+    st.dataframe(teams, width="stretch", hide_index=True)
     st.download_button(
         "Download teams.csv",
         teams.to_csv(index=False),
@@ -41,9 +51,14 @@ with tab_teams:
     )
 
 with tab_matches:
-    season = st.selectbox("Season", seasons["matches"], index=len(seasons["matches"]) - 1, key="matches_season")
+    preferred_matches_season = data.preferred_season(seasons["matches"])
+    season = st.selectbox(
+        "Season", seasons["matches"],
+        index=seasons["matches"].index(preferred_matches_season),
+        key="matches_season",
+    )
     matches = data.load_matches(season=season)
-    st.dataframe(matches, use_container_width=True, hide_index=True)
+    st.dataframe(matches, width="stretch", hide_index=True)
     st.download_button(
         "Download matches.csv",
         matches.to_csv(index=False),

@@ -6,9 +6,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import charting, data, ui
+from utils import charting, data, pitch, ui
 from utils import match_analysis as ma
-from utils import pitch
+from utils import team_analysis as ta
 
 
 # Impect's raw ACTION values that can carry bypassed-opponent/defender value,
@@ -32,6 +32,12 @@ TECHNIQUE_COLOURS: dict[str, str] = {
     "Header": "#7a7f87",
     "Carry / Dribble": "#e04f9f",
     "Other": "#98a2b3",
+}
+ZONE_ORDER = ["Defensive Third", "Middle Third", "Final Third"]
+ZONE_COLOURS: dict[str, str] = {
+    "Defensive Third": "#344054",
+    "Middle Third": "#c69214",
+    "Final Third": ui.CHARLTON_RED,
 }
 
 
@@ -72,6 +78,48 @@ def _line_breaking_css() -> None:
             line-height: 1.2;
             overflow-wrap: anywhere;
         }
+
+        .lb-benchmark-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 4px 0 16px;
+        }
+
+        .lb-benchmark-card {
+            background: #ffffff;
+            border: 1px solid #e2e7ee;
+            border-top: 3px solid #98a2b3;
+            border-radius: 9px;
+            box-shadow: 0 3px 12px rgba(16, 24, 40, 0.05);
+            padding: 13px 15px;
+        }
+
+        .lb-benchmark-card.strong { border-top-color: #16803c; }
+        .lb-benchmark-card.mid { border-top-color: #d89216; }
+        .lb-benchmark-card.weak { border-top-color: #c30017; }
+
+        .lb-benchmark-label {
+            color: #667085;
+            font-size: 0.72rem;
+            font-weight: 850;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .lb-benchmark-value {
+            color: #101828;
+            font-size: 1.35rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin: 7px 0 4px;
+        }
+
+        .lb-benchmark-note {
+            color: #667085;
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -106,12 +154,25 @@ def _technique_label(action: object, action_type: object) -> str:
     return "Other"
 
 
+def _zone_label(start_x: object) -> str:
+    value = pd.to_numeric(pd.Series([start_x]), errors="coerce").iloc[0]
+    if pd.isna(value):
+        return "Unknown"
+    if value < -pitch.FINAL_THIRD_X:
+        return "Defensive Third"
+    if value < pitch.FINAL_THIRD_X:
+        return "Middle Third"
+    return "Final Third"
+
+
 def _add_technique(events: pd.DataFrame) -> pd.DataFrame:
     out = events.copy()
     out["Technique"] = [
         _technique_label(action, action_type)
         for action, action_type in zip(out.get("Action", pd.Series(dtype=object)), out.get("Action Type", pd.Series(dtype=object)), strict=False)
     ]
+    start_x = pd.to_numeric(out.get("Start X", pd.Series(dtype=float)), errors="coerce")
+    out["Zone"] = [_zone_label(value) for value in start_x]
     return out
 
 
@@ -158,6 +219,99 @@ def _technique_breakdown_figure(events: pd.DataFrame, title: str) -> go.Figure:
     fig.update_yaxes(title="")
     fig.update_layout(showlegend=False)
     return charting.polish_figure(fig, title, height=charting.horizontal_bar_height(len(summary), min_height=320, row_height=38, max_height=520))
+
+
+def _zone_breakdown_figure(events: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+    if events.empty or "Zone" not in events:
+        return charting.polish_figure(fig, title, height=340)
+
+    summary = (
+        events.assign(**{"Bypassed Opponents": _numeric(events, "Bypassed Opponents")})
+        .groupby("Zone", as_index=False)
+        .agg(Actions=("Zone", "size"), **{"Bypassed Opponents": ("Bypassed Opponents", "sum")})
+    )
+    summary = summary[summary["Zone"].isin(ZONE_ORDER)].copy()
+    if summary.empty:
+        return charting.polish_figure(fig, title, height=340)
+    summary["_Order"] = summary["Zone"].map({zone: index for index, zone in enumerate(ZONE_ORDER)})
+    summary = summary.sort_values("_Order")
+    total_actions = max(float(summary["Actions"].sum()), 1.0)
+    summary["Share %"] = summary["Actions"] / total_actions * 100
+
+    colours = [ZONE_COLOURS.get(zone, "#98a2b3") for zone in summary["Zone"]]
+    customdata = np.stack([summary["Bypassed Opponents"], summary["Share %"]], axis=-1)
+    fig.add_trace(
+        go.Bar(
+            x=summary["Zone"],
+            y=summary["Actions"],
+            marker=dict(color=colours, line=dict(color="#ffffff", width=1)),
+            text=[f"{value:.0f} ({share:.0f}%)" for value, share in zip(summary["Actions"], summary["Share %"], strict=False)],
+            textposition="outside",
+            customdata=customdata,
+            hovertemplate=(
+                "<b>%{x}</b><br>Actions: %{y:.0f}"
+                "<br>Share of line breaks: %{customdata[1]:.0f}%"
+                "<br>Bypassed opponents: %{customdata[0]:.1f}<extra></extra>"
+            ),
+        )
+    )
+    fig.update_xaxes(title="Zone the action started in", categoryorder="array", categoryarray=ZONE_ORDER)
+    fig.update_yaxes(title="Line-breaking actions", rangemode="tozero")
+    fig.update_layout(showlegend=False)
+    return charting.polish_figure(fig, title, height=380)
+
+
+def _combination_table(events: pd.DataFrame, top_n: int = 15) -> pd.DataFrame:
+    columns = ["Player", "Receiver", "Actions", "Bypassed Opponents", "Bypassed Defenders"]
+    if events.empty or "Receiver" not in events:
+        return pd.DataFrame(columns=columns)
+    working = events.dropna(subset=["Player", "Receiver"]).copy()
+    working = working[working["Player"].astype(str) != working["Receiver"].astype(str)]
+    if working.empty:
+        return pd.DataFrame(columns=columns)
+    working["Bypassed Opponents"] = _numeric(working, "Bypassed Opponents")
+    working["Bypassed Defenders"] = _numeric(working, "Bypassed Defenders")
+    grouped = working.groupby(["Player", "Receiver"], as_index=False).agg(
+        Actions=("Player", "size"),
+        **{
+            "Bypassed Opponents": ("Bypassed Opponents", "sum"),
+            "Bypassed Defenders": ("Bypassed Defenders", "sum"),
+        },
+    )
+    return grouped.sort_values(["Bypassed Opponents", "Actions"], ascending=False).head(top_n).reset_index(drop=True)
+
+
+def _combination_chart(combos: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+    if combos.empty:
+        return charting.polish_figure(fig, title, height=380)
+    plot_df = combos.sort_values("Bypassed Opponents", ascending=True).copy()
+    plot_df["_Label"] = plot_df["Player"].map(lambda v: charting.wrap_label(v, width=16, max_lines=1)) + " → " + plot_df["Receiver"].map(
+        lambda v: charting.wrap_label(v, width=16, max_lines=1)
+    )
+    customdata = np.stack([plot_df["Actions"], plot_df["Bypassed Defenders"]], axis=-1)
+    fig.add_trace(
+        go.Bar(
+            x=plot_df["Bypassed Opponents"],
+            y=plot_df["_Label"],
+            orientation="h",
+            marker=dict(color=ui.CHARLTON_RED, line=dict(color="#ffffff", width=1)),
+            text=[f"{value:.1f}" for value in plot_df["Bypassed Opponents"]],
+            textposition="outside",
+            cliponaxis=False,
+            customdata=customdata,
+            hovertemplate=(
+                "<b>%{y}</b><br>Bypassed opponents: %{x:.1f}"
+                "<br>Actions: %{customdata[0]:.0f}"
+                "<br>Bypassed defenders: %{customdata[1]:.1f}<extra></extra>"
+            ),
+        )
+    )
+    fig.update_xaxes(title="Bypassed opponents from this combination")
+    fig.update_yaxes(title="")
+    fig.update_layout(showlegend=False)
+    return charting.polish_figure(fig, title, height=charting.horizontal_bar_height(len(plot_df), min_height=340, row_height=34, max_height=680))
 
 
 def _line_breaking_events(
@@ -211,6 +365,7 @@ def _display_table(events: pd.DataFrame) -> pd.DataFrame:
             "Player",
             "Position",
             "Technique",
+            "Zone",
             "Receiver",
             "Result",
             "Bypassed Opponents",
@@ -229,12 +384,74 @@ def _display_table(events: pd.DataFrame) -> pd.DataFrame:
     return out[display_cols]
 
 
+def _team_fixture_match_ids(season: str | None, team_name: str, window: str) -> list[str]:
+    matches = ma.load_matches(season)
+    if matches.empty:
+        return []
+    rows = matches[matches["Home"].astype(str).eq(str(team_name)) | matches["Away"].astype(str).eq(str(team_name))].copy()
+    if rows.empty:
+        return []
+    rows["Date"] = pd.to_datetime(rows["Date"], errors="coerce", utc=True).dt.tz_convert(None)
+    rows = rows.sort_values(["Date", "MatchId"])
+    if window == "Last 10":
+        rows = rows.tail(10)
+    elif window == "Last 5":
+        rows = rows.tail(5)
+    return rows["MatchId"].astype(str).tolist()
+
+
+def _benchmark_card_status(percentile_value: float) -> str:
+    if pd.isna(percentile_value):
+        return "mid"
+    if percentile_value >= 67:
+        return "strong"
+    if percentile_value >= 33:
+        return "mid"
+    return "weak"
+
+
+def _team_benchmark_cards(season: str | None, team_name: str) -> None:
+    teams = data.load_teams(season=season)
+    if teams.empty or team_name not in teams.get("Team", pd.Series(dtype=str)).astype(str).unique():
+        st.caption(f"No league team-style data is available to benchmark {team_name} for this season.")
+        return
+
+    metrics = [
+        ("Bypassed Opponents /90", "Opponents removed from the game by a pass, carry or dribble, per 90."),
+        ("Dribble Progression /90", "Distance carried toward goal via dribble, per 90 -- a second progression lens."),
+        ("Passes to Final 3rd /90", "Volume of passing that reaches the final third, per 90."),
+    ]
+    cards_html = []
+    for metric, note in metrics:
+        if metric not in teams:
+            continue
+        ranked = ta.metric_rank_table(teams, metric, higher_is_better=True)
+        selected = ranked[ranked["Team"].astype(str).eq(str(team_name))]
+        if selected.empty:
+            continue
+        row = selected.iloc[0]
+        status = _benchmark_card_status(float(row["Percentile"]))
+        cards_html.append(
+            f'<div class="lb-benchmark-card {status}">'
+            f'<div class="lb-benchmark-label">{ui.esc(metric)}</div>'
+            f'<div class="lb-benchmark-value">{float(row["Value"]):.2f}</div>'
+            f'<div class="lb-benchmark-note">Rank {int(row["Rank"])} of {len(ranked)} '
+            f'({float(row["Percentile"]):.0f}th percentile)<br>{ui.esc(note)}</div></div>'
+        )
+    if not cards_html:
+        st.caption(f"No league team-style data is available to benchmark {team_name} for this season.")
+        return
+    st.markdown(f'<div class="lb-benchmark-row">{"".join(cards_html)}</div>', unsafe_allow_html=True)
+
+
 ma.page_header(
     "Line-Breaking Actions",
-    "Map the selected team's event-level actions that bypass opponents or defenders, broken down by technique and the players on both ends of the action.",
+    "Map the selected team's event-level actions that bypass opponents or defenders, broken down by technique, pitch "
+    "zone and the players on both ends of the action, with a season leaderboard and league benchmark.",
     "CAFC_DB Impect provider events supply opponents and defenders bypassed. These packing metrics count players taken out of the game by an action.",
 )
 _line_breaking_css()
+
 
 def _render_match_tab() -> None:
     season = ma.select_match_season(key="line_breaking_actions_season")
@@ -306,17 +523,48 @@ def _render_match_tab() -> None:
             "Marker size reflects bypassed opponents; the defender filter narrows this to actions that also bypass recognised defenders."
         )
 
-    ma.section_heading("Line-Break Variations")
-    if filtered.empty:
-        st.caption("No actions match the current filters.")
+    variation_cols = st.columns(2)
+    with variation_cols[0]:
+        ma.section_heading("Line-Break Variations")
+        if filtered.empty:
+            st.caption("No actions match the current filters.")
+        else:
+            st.plotly_chart(
+                _technique_breakdown_figure(filtered, f"{team_name}: Line Breaks by Technique"),
+                width="stretch",
+            )
+            st.caption(
+                "Technique groups Impect's raw action label (ground pass, diagonal, chipped pass, cross, header, carry/dribble) "
+                "so the same line-breaking total can be read by how the ball was moved."
+            )
+    with variation_cols[1]:
+        ma.section_heading("Zone of Origin")
+        if filtered.empty:
+            st.caption("No actions match the current filters.")
+        else:
+            st.plotly_chart(
+                _zone_breakdown_figure(filtered, f"{team_name}: Line Breaks by Starting Zone"),
+                width="stretch",
+            )
+            st.caption(
+                "Zone is where the action started, normalised so the selected team always attacks left to right. Final "
+                "Third here means the action was already in the attacking third when it broke the line -- useful for "
+                "separating deep progression from final-third combination play."
+            )
+
+    ma.section_heading("Top Combinations This Match")
+    combos = _combination_table(filtered, top_n=10)
+    if combos.empty:
+        st.caption("No repeated passer-to-receiver combinations meet the current filters.")
     else:
-        st.plotly_chart(
-            _technique_breakdown_figure(filtered, f"{team_name}: Line Breaks by Technique"),
-            width="stretch",
-        )
+        combo_cols = st.columns([1.3, 1])
+        with combo_cols[0]:
+            st.plotly_chart(_combination_chart(combos, f"{team_name}: Top Line-Breaking Combinations"), width="stretch")
+        with combo_cols[1]:
+            st.dataframe(combos, width="stretch", hide_index=True)
         st.caption(
-            "Technique groups Impect's raw action label (ground pass, diagonal, chipped pass, cross, header, carry/dribble) "
-            "so the same line-breaking total can be read by how the ball was moved."
+            "Combination pairs the acting player with the pass receiver recorded on the same event; carries, dribbles "
+            "and passes without a recorded receiver aren't attributed to a combination."
         )
 
     ma.section_heading("Line-breaking action table")
@@ -330,12 +578,7 @@ def _render_match_tab() -> None:
         )
 
 
-match_tab, leaderboard_tab = st.tabs(["Match Map", "Season Leaderboard"])
-
-with match_tab:
-    _render_match_tab()
-
-with leaderboard_tab:
+def _render_leaderboard_tab() -> None:
     ma.section_heading("Season Line-Break Leaderboard")
     st.caption(
         "Ranks every league player by season line-breaking output. 'Initiating' totals the player's own bypassed-opponent "
@@ -346,72 +589,136 @@ with leaderboard_tab:
     leaderboard_players = data.load_players(leaderboard_season)
     if leaderboard_players.empty:
         st.info("No player season data is available for this season.")
+        return
+
+    team_options = sorted(leaderboard_players["Team"].dropna().astype(str).unique().tolist())
+    default_team_index = next((index for index, team in enumerate(team_options) if "charlton" in team.lower()), 0)
+    leaderboard_controls = st.columns([1.2, 1.0, 0.9])
+    team_filter = leaderboard_controls[0].selectbox(
+        "Team filter", ["All Teams", *team_options], index=default_team_index + 1, key="line_breaking_leaderboard_team"
+    )
+    role = leaderboard_controls[1].radio(
+        "Role", ["Initiating", "Receiving"], horizontal=True, key="line_breaking_leaderboard_role"
+    )
+    leaderboard_top_n = leaderboard_controls[2].slider("Players shown", 5, 30, 15, key="line_breaking_leaderboard_top_n")
+
+    if team_filter != "All Teams":
+        ma.section_heading(f"{team_filter}: League Benchmark")
+        _team_benchmark_cards(leaderboard_season, team_filter)
+        st.caption("Percentile is direction-adjusted across every club with team-style data this season; a higher score always ranks higher.")
+
+    role_metric = "Bypassed Opponents /90" if role == "Initiating" else "Receiving Progression /90"
+    role_secondary = "Bypassed Defenders /90" if role == "Initiating" else "Receiving Defenders Bypassed /90"
+    pool = leaderboard_players.copy()
+    if team_filter != "All Teams":
+        pool = pool[pool["Team"].astype(str).eq(team_filter)].copy()
+    pool = pool[pd.to_numeric(pool["Minutes"], errors="coerce").fillna(0).ge(45)].copy()
+    pool[role_metric] = pd.to_numeric(pool.get(role_metric), errors="coerce")
+    pool = pool.dropna(subset=[role_metric]).nlargest(leaderboard_top_n, role_metric).sort_values(role_metric)
+
+    ma.section_heading("Player Leaderboard")
+    if pool.empty:
+        st.info("No players meet the minimum-minutes threshold for this selection.")
     else:
-        team_options = sorted(leaderboard_players["Team"].dropna().astype(str).unique().tolist())
-        default_team_index = next(
-            (index for index, team in enumerate(team_options) if "charlton" in team.lower()), 0
+        colours = [ui.CHARLTON_RED if "charlton" in str(team).lower() else ui.CHARLTON_BLACK for team in pool["Team"]]
+        customdata = np.stack(
+            [pool["Team"], pd.to_numeric(pool.get(role_secondary), errors="coerce").fillna(0), pool["Minutes"]],
+            axis=-1,
         )
-        leaderboard_controls = st.columns([1.2, 1.0, 0.9])
-        team_filter = leaderboard_controls[0].selectbox(
-            "Team filter", ["All Teams", *team_options], index=default_team_index + 1, key="line_breaking_leaderboard_team"
+        fig = go.Figure(
+            go.Bar(
+                x=pool[role_metric],
+                y=pool["Player"],
+                orientation="h",
+                marker=dict(color=colours, line=dict(color="#ffffff", width=1)),
+                text=[f"{value:.2f}" for value in pool[role_metric]],
+                textposition="outside",
+                cliponaxis=False,
+                customdata=customdata,
+                hovertemplate=(
+                    "<b>%{y}</b> · %{customdata[0]}"
+                    f"<br>{role_metric}: " + "%{x:.2f}"
+                    f"<br>{role_secondary}: " + "%{customdata[1]:.2f}"
+                    "<br>Minutes: %{customdata[2]:.0f}<extra></extra>"
+                ),
+            )
         )
-        role = leaderboard_controls[1].radio(
-            "Role", ["Initiating", "Receiving"], horizontal=True, key="line_breaking_leaderboard_role"
+        fig.update_xaxes(title=role_metric)
+        fig.update_yaxes(title="")
+        fig.update_layout(showlegend=False)
+        fig = charting.polish_figure(
+            fig,
+            f"{leaderboard_season}: Top {role.lower()} line-breakers"
+            + ("" if team_filter == "All Teams" else f" · {team_filter}"),
+            height=charting.horizontal_bar_height(len(pool), min_height=380, row_height=34, max_height=760),
         )
-        leaderboard_top_n = leaderboard_controls[2].slider(
-            "Players shown", 5, 30, 15, key="line_breaking_leaderboard_top_n"
-        )
+        st.plotly_chart(fig, width="stretch")
 
-        role_metric = "Bypassed Opponents /90" if role == "Initiating" else "Receiving Progression /90"
-        role_secondary = "Bypassed Defenders /90" if role == "Initiating" else "Receiving Defenders Bypassed /90"
-        pool = leaderboard_players.copy()
-        if team_filter != "All Teams":
-            pool = pool[pool["Team"].astype(str).eq(team_filter)].copy()
-        pool = pool[pd.to_numeric(pool["Minutes"], errors="coerce").fillna(0).ge(45)].copy()
-        pool[role_metric] = pd.to_numeric(pool.get(role_metric), errors="coerce")
-        pool = pool.dropna(subset=[role_metric]).nlargest(leaderboard_top_n, role_metric).sort_values(role_metric)
-        if pool.empty:
-            st.info("No players meet the minimum-minutes threshold for this selection.")
-        else:
-            colours = [ui.CHARLTON_RED if "charlton" in str(team).lower() else ui.CHARLTON_BLACK for team in pool["Team"]]
-            customdata = np.stack(
-                [pool["Team"], pd.to_numeric(pool.get(role_secondary), errors="coerce").fillna(0), pool["Minutes"]],
-                axis=-1,
-            )
-            fig = go.Figure(
-                go.Bar(
-                    x=pool[role_metric],
-                    y=pool["Player"],
-                    orientation="h",
-                    marker=dict(color=colours, line=dict(color="#ffffff", width=1)),
-                    text=[f"{value:.2f}" for value in pool[role_metric]],
-                    textposition="outside",
-                    cliponaxis=False,
-                    customdata=customdata,
-                    hovertemplate=(
-                        "<b>%{y}</b> · %{customdata[0]}"
-                        f"<br>{role_metric}: " + "%{x:.2f}"
-                        f"<br>{role_secondary}: " + "%{customdata[1]:.2f}"
-                        "<br>Minutes: %{customdata[2]:.0f}<extra></extra>"
-                    ),
-                )
-            )
-            fig.update_xaxes(title=role_metric)
-            fig.update_yaxes(title="")
-            fig.update_layout(showlegend=False)
-            fig = charting.polish_figure(
-                fig,
-                f"{leaderboard_season}: Top {role.lower()} line-breakers"
-                + ("" if team_filter == "All Teams" else f" · {team_filter}"),
-                height=charting.horizontal_bar_height(len(pool), min_height=380, row_height=34, max_height=760),
-            )
-            st.plotly_chart(fig, width="stretch")
+        table_cols = ma.available_columns(pool, ["Player", "Team", "Position", "Minutes", role_metric, role_secondary])
+        st.dataframe(pool[table_cols].sort_values(role_metric, ascending=False), width="stretch", hide_index=True)
 
-            table_cols = ma.available_columns(
-                pool, ["Player", "Team", "Position", "Minutes", role_metric, role_secondary]
-            )
-            st.dataframe(
-                pool[table_cols].sort_values(role_metric, ascending=False),
+    if team_filter == "All Teams":
+        st.caption("Select a single team above to see its season passer-to-receiver combinations.")
+        return
+
+    ma.section_heading(f"{team_filter}: Season Combinations")
+    combo_controls = st.columns([1, 3])
+    with combo_controls[0]:
+        combo_window = st.selectbox("Match window", ["Full Season", "Last 10", "Last 5"], key="line_breaking_combo_window")
+    match_ids = _team_fixture_match_ids(leaderboard_season, team_filter, combo_window)
+    if not match_ids:
+        st.info("No fixtures are available for this team and season.")
+        return
+    with st.spinner("Loading season events for combinations..."):
+        season_events = data.load_match_events(season=leaderboard_season, team=team_filter, match_ids=match_ids, limit=120000)
+    if len(season_events) >= 120000:
+        st.warning("The season event pull reached its 120,000-row cap; combination totals may be incomplete.")
+    if season_events.empty:
+        st.info("No event-level rows are available for this team across the selected window.")
+        return
+    season_events = _line_breaking_events(season_events, min_bypassed_opponents=0.01, min_bypassed_defenders=0)
+    season_combos = _combination_table(season_events, top_n=15)
+    if season_combos.empty:
+        st.caption("No repeated passer-to-receiver line-breaking combinations are available for this window.")
+    else:
+        combo_cols = st.columns([1.3, 1])
+        with combo_cols[0]:
+            st.plotly_chart(
+                _combination_chart(season_combos, f"{team_filter}: Top Line-Breaking Combinations · {combo_window}"),
                 width="stretch",
-                hide_index=True,
             )
+        with combo_cols[1]:
+            st.dataframe(season_combos, width="stretch", hide_index=True)
+        st.caption(
+            f"{len(match_ids)} matches in the {combo_window.lower()} window. Combinations use raw event totals across "
+            "the window, not a per-90 rate, so busier match windows naturally show larger totals."
+        )
+
+
+match_tab, leaderboard_tab = st.tabs(["Match Map", "Season Leaderboard"])
+
+with match_tab:
+    _render_match_tab()
+
+with leaderboard_tab:
+    _render_leaderboard_tab()
+
+with st.expander("Terminology and methodology"):
+    st.markdown(
+        """
+        - **Bypassed Opponents / Bypassed Defenders**: Impect packing metrics counting opposition players (or, for
+          the defender variant, specifically recognised defenders) taken out of the game by a single pass, carry or
+          dribble.
+        - **Technique**: groups Impect's raw action label into the families a coach thinks in -- ground pass,
+          diagonal pass, chipped pass, short aerial pass, high/low cross, header, and carry/dribble.
+        - **Zone of Origin**: the pitch third the action started in, normalised so the selected team always attacks
+          left to right. Defensive Third and Middle Third line breaks describe progression up the pitch; Final Third
+          line breaks describe combination play once already in the attacking third.
+        - **Combination**: the acting player paired with the pass receiver recorded on the same event. Only passes
+          with a recorded receiver are attributed; carries, dribbles and unresolved passes are excluded.
+        - **Receiving Progression / Receiving Defenders Bypassed**: Impect KPIs crediting the player on the *receiving*
+          end of a line-breaking pass, used for the "Receiving" leaderboard role.
+        - **League Benchmark**: the selected team's rank and direction-adjusted percentile against every club with
+          team-style KPI data this season. Percentile 100 is the league's highest standing for that metric.
+        """
+    )

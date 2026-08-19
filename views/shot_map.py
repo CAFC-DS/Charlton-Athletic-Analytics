@@ -133,6 +133,27 @@ if filtered.empty:
 else:
     st.plotly_chart(pitch.shot_map_half_pitch(filtered, team_name, f"{team_name}: Shot Map and xG"), width="stretch")
 
+ma.section_heading("Goalmouth: Where Shots Were Aimed")
+st.caption(
+    "Plotted from the shooter's view using each shot's target coordinates on the goal face, coloured by player. "
+    "Marker size is Post-Shot xG (falls back to pre-shot xG when a shot wasn't on target). Only shots with a "
+    "recorded target location can be placed here, so the shot count may be lower than the map above."
+)
+if filtered.empty:
+    st.info("No shots match the current filters.")
+else:
+    goalmouth_players = sorted(filtered["Player"].dropna().astype(str).unique().tolist())
+    st.plotly_chart(
+        pitch.goalmouth_shot_map(
+            filtered,
+            f"{team_name}: Goalmouth Shot Placement",
+            group_col="Player",
+            group_order=goalmouth_players,
+            height=620,
+        ),
+        width="stretch",
+    )
+
 ma.section_heading("Shot event table")
 display_cols = ma.available_columns(
     filtered,

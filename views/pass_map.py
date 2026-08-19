@@ -94,7 +94,10 @@ ma.section_heading("Selected fixture summary")
 completed = int((passes["Result"].astype(str).str.upper() == "SUCCESS").sum()) if not passes.empty else 0
 failed = int((passes["Result"].astype(str).str.upper() == "FAIL").sum()) if not passes.empty else 0
 completion = completed / (completed + failed) * 100 if completed + failed else 0
-metric_cols = st.columns(4)
+cross_mask = data.is_cross(passes)
+crosses_attempted = int(cross_mask.sum())
+crosses_completed = int((cross_mask & passes["Result"].astype(str).str.upper().eq("SUCCESS")).sum()) if not passes.empty else 0
+metric_cols = st.columns(5)
 with metric_cols[0]:
     _summary_card("Fixture", str(match_row.get("Match", "Unknown")), text_value=True)
 with metric_cols[1]:
@@ -103,14 +106,17 @@ with metric_cols[2]:
     _summary_card("Completion", f"{completion:.1f}%")
 with metric_cols[3]:
     _summary_card("Total PXT pass", ma.metric_value(passes["PXT Pass"].sum() if not passes.empty else 0, "PXT Pass"))
+with metric_cols[4]:
+    _summary_card("Crosses", f"{crosses_completed}/{crosses_attempted} completed", text_value=True)
 
 ma.section_heading("Pass map controls")
-control_cols = st.columns(3)
+control_cols = st.columns(4)
 outcomes = sorted(passes["Result"].dropna().astype(str).unique().tolist()) if not passes.empty else []
 selected_outcomes = control_cols[0].multiselect("Outcomes", outcomes, default=outcomes)
 min_distance = control_cols[1].number_input("Minimum distance", min_value=0.0, value=0.0, step=5.0)
-max_passes = control_cols[2].slider("Maximum plotted passes", 50, 700, min(450, max(len(passes), 50)), step=50)
-control_cols[2].caption(
+pass_type = control_cols[2].selectbox("Pass type", ["All Passes", "Crosses Only", "Crosses Excluded"])
+max_passes = control_cols[3].slider("Maximum plotted passes", 50, 700, min(450, max(len(passes), 50)), step=50)
+control_cols[3].caption(
     "When the selection exceeds this limit, the map keeps the highest PXT Passes first. "
     "If PXT Pass is unavailable, it falls back to longest pass distance."
 )
@@ -120,12 +126,17 @@ if selected_outcomes:
     filtered = filtered[filtered["Result"].astype(str).isin(selected_outcomes)]
 if "Pass Distance" in filtered:
     filtered = filtered[pd.to_numeric(filtered["Pass Distance"], errors="coerce").fillna(0) >= min_distance]
+if pass_type == "Crosses Only":
+    filtered = filtered[data.is_cross(filtered)]
+elif pass_type == "Crosses Excluded":
+    filtered = filtered[~data.is_cross(filtered)]
 
+map_title_suffix = {"Crosses Only": "Cross Delivery Map", "Crosses Excluded": "Non-Cross Pass Map"}.get(pass_type, "Pass Start/End Map")
 ma.section_heading(f"{team_name} Pass Map")
 if filtered.empty:
     st.info("No pass locations match the current filters.")
 else:
-    st.plotly_chart(pitch.pass_map(filtered, team_name, f"{team_name}: Pass Start/End Map", max_passes=max_passes), width="stretch")
+    st.plotly_chart(pitch.pass_map(filtered, team_name, f"{team_name}: {map_title_suffix}", max_passes=max_passes), width="stretch")
 
 ma.section_heading("Pass event table")
 display_cols = ma.available_columns(

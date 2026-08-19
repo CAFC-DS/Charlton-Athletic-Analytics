@@ -472,7 +472,12 @@ peer_pool = filter_cols[0].selectbox(
     help="Role-aware pools generally produce more useful matches than comparing every player together.",
 )
 max_minutes = int(max(1, math.ceil(float(players["_Minutes"].max(skipna=True) if players["_Minutes"].notna().any() else 1))))
-default_minutes = min(600, max_minutes)
+# Defaulting to min(600, max_minutes) sets the floor at the pool's own highest
+# minutes-played value once a season is young (e.g. 1 game week in, max_minutes
+# might be ~97) -- that excludes almost every candidate by construction, not
+# because they're genuinely unproven. Scaling by half the current maximum keeps
+# the same 600-minute cap once a season is well underway, but stays usable early on.
+default_minutes = min(600, max(0, round(max_minutes * 0.5)))
 min_minutes = filter_cols[1].slider("Minimum Minutes", min_value=0, max_value=max_minutes, value=default_minutes, step=50 if max_minutes >= 500 else 10)
 exclude_same_team = filter_cols[2].checkbox("Exclude Same Team", value=False)
 top_n = filter_cols[3].slider("Shortlist Size", min_value=3, max_value=min(30, max(3, len(players) - 1)), value=min(12, max(3, len(players) - 1)))
@@ -547,7 +552,15 @@ market_cols[3].metric("Comparable Universe", len(universe))
 
 pa.section_heading("Closest Profile Matches")
 if results.empty:
-    st.info("No candidates meet the selected pool, minutes and metric-coverage filters.")
+    if len(candidate_pool) == 0:
+        st.info(
+            "No candidates meet the selected pool, minutes and metric-coverage filters -- the Minimum Minutes filter "
+            f"(currently {min_minutes}) is excluding every candidate. This is common early in a season when even the "
+            "most-used players have played relatively few minutes; try lowering Minimum Minutes or picking a season "
+            "that's further along."
+        )
+    else:
+        st.info("No candidates meet the selected pool, minutes and metric-coverage filters.")
     st.stop()
 
 top_results = results.head(top_n).copy()

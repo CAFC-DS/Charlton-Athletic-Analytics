@@ -82,9 +82,18 @@ if matches.empty:
 match_row = ma.match_selector(matches, key="passing_network_match")
 team_name = ma.team_selector_for_match(match_row, key="passing_network_team")
 network = data.load_pass_network(match_id=match_row.get("MatchId"), team=team_name)
+team_passes = data.load_match_events(
+    season=season,
+    match_id=match_row.get("MatchId"),
+    team=team_name,
+    action_types=["PASS"],
+    limit=2500,
+)
+crosses = team_passes[data.is_cross(team_passes)].copy() if not team_passes.empty else team_passes
+crosses_completed = int(crosses["Result"].astype(str).str.upper().eq("SUCCESS").sum()) if not crosses.empty else 0
 
 ma.section_heading("Selected fixture summary")
-metric_cols = st.columns(4)
+metric_cols = st.columns(5)
 with metric_cols[0]:
     _summary_card("Fixture", str(match_row.get("Match", "Unknown")), text_value=True)
 with metric_cols[1]:
@@ -93,6 +102,8 @@ with metric_cols[2]:
     _summary_card("Network links", len(network))
 with metric_cols[3]:
     _summary_card("Total passes", ma.metric_value(network["Pass Count"].sum() if not network.empty else 0, "Actions"))
+with metric_cols[4]:
+    _summary_card("Crosses", f"{crosses_completed}/{len(crosses)} completed", text_value=True)
 
 ma.section_heading("Network controls")
 control_cols = st.columns(2)
@@ -112,3 +123,14 @@ if network.empty:
 else:
     display_cols = ["Player", "Receiver", "Pass Count", "Passer X", "Passer Y", "Receiver X", "Receiver Y"]
     st.dataframe(network[display_cols].sort_values("Pass Count", ascending=False), width="stretch", hide_index=True)
+
+ma.section_heading("Crossing links")
+st.caption("Crosses are a delivery into the box rather than a repeated passer-receiver relationship, so they sit here as a separate list rather than folded into the network graph above.")
+if crosses.empty:
+    st.caption("No crosses were attempted by this team in the selected fixture.")
+else:
+    cross_display_cols = ma.available_columns(
+        crosses,
+        ["Minute", "Player", "Receiver", "Action", "Result", "Pass Distance", "PXT Pass", "Start X", "Start Y", "End X", "End Y"],
+    )
+    st.dataframe(crosses[cross_display_cols].sort_values("Minute"), width="stretch", hide_index=True)

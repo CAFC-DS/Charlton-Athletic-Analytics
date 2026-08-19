@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from utils import charting
+from utils import data
 from utils import team_analysis as ta
 
 
@@ -40,6 +41,12 @@ def _value(frame: pd.DataFrame, metric: str, team_name: str) -> float:
     return float(value) if pd.notna(value) else np.nan
 
 
+def _ordinal_suffix(rounded: int) -> str:
+    if 11 <= abs(rounded) % 100 <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(abs(rounded) % 10, "th")
+
+
 def _percentile_text(value: object) -> str:
     try:
         number = float(value)
@@ -47,7 +54,8 @@ def _percentile_text(value: object) -> str:
         return "N/A"
     if not np.isfinite(number):
         return "N/A"
-    return f"{number:.0f}th percentile"
+    rounded = round(number)
+    return f"{rounded:.0f}{_ordinal_suffix(rounded)} percentile"
 
 
 def _metric_text(value: object, metric: str) -> str:
@@ -135,12 +143,16 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
             continue
         selected_value = _value(clustered, metric, team_name)
         league_average = pd.to_numeric(clustered[metric], errors="coerce").mean()
+        percentile_series = ta.percentile(pd.to_numeric(clustered[metric], errors="coerce"), higher_is_better=True)
+        team_row = clustered["Team"].astype(str).eq(str(team_name))
+        selected_percentile = float(percentile_series[team_row].iloc[0]) if team_row.any() else np.nan
         rows.append(
             {
                 "Metric": metric,
                 "Selected": selected_value,
                 "League Average": league_average,
-                "Gap": selected_value - league_average,
+                "Percentile": selected_percentile,
+                "Percentile Gap": selected_percentile - 50.0,
             }
         )
     plot_df = pd.DataFrame(rows)
@@ -149,30 +161,38 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
         fig.update_layout(height=360)
         return fig
 
-    plot_df["Colour"] = np.where(plot_df["Gap"].ge(0), "#16803c", "#c30017")
-    plot_df["Text"] = [
-        f"{charting.metric_text(row['Selected'], row['Metric'])} vs avg {charting.metric_text(row['League Average'], row['Metric'])}"
+    plot_df["Colour"] = np.where(plot_df["Percentile Gap"].ge(0), "#16803c", "#c30017")
+    plot_df["Label"] = [
+        f"{row['Percentile']:.0f}th percentile ({charting.metric_text(row['Selected'], row['Metric'])})"
         for _, row in plot_df.iterrows()
     ]
     fig = go.Figure(
         go.Bar(
-            x=plot_df["Gap"],
-            y=plot_df["Metric"].map(lambda value: charting.wrap_label(value, width=24, max_lines=2)),
+            x=plot_df["Percentile Gap"],
+            y=plot_df["Metric"].map(lambda value: charting.wrap_label(value, width=22, max_lines=1)),
             orientation="h",
             marker_color=plot_df["Colour"],
-            text=plot_df["Text"],
+            text=plot_df["Label"],
             textposition="outside",
             cliponaxis=False,
-            customdata=np.stack([plot_df["Metric"], plot_df["Selected"], plot_df["League Average"]], axis=-1),
+            customdata=np.stack([plot_df["Metric"], plot_df["Selected"], plot_df["League Average"], plot_df["Percentile"]], axis=-1),
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>Selected: %{customdata[1]:.2f}<br>"
-                "League average: %{customdata[2]:.2f}<br>Gap: %{x:+.2f}<extra></extra>"
+                "League average: %{customdata[2]:.2f}<br>League percentile: %{customdata[3]:.0f}th<extra></extra>"
             ),
         )
     )
     fig.add_vline(x=0, line=dict(color="#7a7f87", width=1.4, dash="dash"))
-    fig.update_layout(height=390, xaxis_title="Gap to League Average", yaxis_title="", showlegend=False)
-    return ta.polish_figure(fig, f"{team_name}: Passing Metric Gaps")
+    max_gap = float(plot_df["Percentile Gap"].abs().max()) if not plot_df.empty else 50.0
+    fig.update_layout(
+        height=130 * len(plot_df) + 120,
+        xaxis_title="League Percentile Gap (0 = league median)",
+        yaxis_title="",
+        showlegend=False,
+        margin=dict(l=140, r=90, t=72, b=58),
+    )
+    fig.update_xaxes(range=[-max(max_gap, 20) * 1.35, max(max_gap, 20) * 1.35])
+    return ta.polish_figure(fig, f"{team_name}: Passing Metric Gaps vs League Median")
 
 
 def _closest_matches(clustered: pd.DataFrame, team_name: str, limit: int = 6) -> pd.DataFrame:
@@ -264,6 +284,53 @@ st.plotly_chart(_passing_map(clustered, team_name), width="stretch")
 
 ta.section_heading("Selected Team vs League")
 st.plotly_chart(_metric_comparison_chart(clustered, team_name), width="stretch")
+st.caption(
+    "Bars show league-percentile points above or below the median (0), not raw metric gaps -- Pass %, Passes to "
+    "Final 3rd /90 and Bypassed Opponents /90 sit on very different numeric scales, so a shared percentile axis is "
+    "what makes them comparable in a single chart. Raw values sit in the outside label and hover."
+)
+
+ta.section_heading(f"{team_name} Crossing Profile")
+event_seasons = data.list_seasons().get("matches", [])
+if season not in event_seasons:
+    st.caption(f"No event-level pass data is available for {season}, so a crossing breakdown can't be built for this season.")
+else:
+    season_matches = data.load_matches(season=season)
+    team_fixtures = ta.match_rows_for_team(season_matches, team_name)
+    match_ids = team_fixtures["MatchId"].dropna().tolist() if "MatchId" in team_fixtures else []
+    if not match_ids:
+        st.caption(f"No fixtures are available for {team_name} in {season}.")
+    else:
+        team_season_passes = data.load_match_events(
+            season=season, team=team_name, match_ids=match_ids, action_types=["PASS"], limit=120000,
+        )
+        team_crosses = team_season_passes[data.is_cross(team_season_passes)].copy() if not team_season_passes.empty else team_season_passes
+        st.caption(
+            f"Built from {team_name}'s own {len(match_ids)} event-level {season} fixtures -- not part of the "
+            "league-wide KPI-fact comparison above, since Impect does not publish a season-aggregate crossing KPI."
+        )
+        if team_crosses.empty:
+            st.info(f"No cross events are available for {team_name} in {season}.")
+        else:
+            completed_crosses = int(team_crosses["Result"].astype(str).str.upper().eq("SUCCESS").sum())
+            matches_played = len(match_ids)
+            crossing_cols = st.columns(4)
+            crossing_cols[0].metric("Crosses / 90", f"{len(team_crosses) / matches_played:.1f}" if matches_played else "N/A")
+            crossing_cols[1].metric("Completion %", f"{completed_crosses / len(team_crosses) * 100:.1f}%")
+            low_crosses = int(team_crosses["Action"].astype(str).str.upper().eq("LOW_CROSS").sum())
+            high_crosses = int(team_crosses["Action"].astype(str).str.upper().eq("HIGH_CROSS").sum())
+            crossing_cols[2].metric("Low / High Split", f"{low_crosses} / {high_crosses}")
+            total_pxt = pd.to_numeric(team_crosses.get("PXT Pass"), errors="coerce").fillna(0).sum()
+            crossing_cols[3].metric("Total PXT From Crosses", f"{total_pxt:.2f}")
+
+            top_crossers = (
+                team_crosses.groupby("Player", as_index=False)
+                .agg(Attempts=("Player", "size"), Completed=("Result", lambda s: int(s.astype(str).str.upper().eq("SUCCESS").sum())))
+                .sort_values("Attempts", ascending=False)
+                .head(10)
+            )
+            top_crossers["Completion %"] = (top_crossers["Completed"] / top_crossers["Attempts"] * 100).round(1)
+            st.dataframe(top_crossers, width="stretch", hide_index=True)
 
 ta.section_heading("Closest Passing Profiles")
 closest = _closest_matches(clustered, team_name)

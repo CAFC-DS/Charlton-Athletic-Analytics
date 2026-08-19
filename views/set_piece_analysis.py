@@ -146,15 +146,19 @@ ta.page_header(
 )
 
 with st.expander("Set Piece Analysis Controls", expanded=True):
-    available_seasons = data.list_seasons().get("matches", [])
-    event_seasons = [season for season in available_seasons if str(season).replace("2025", "25") == "25/26"]
+    event_seasons = data.list_seasons().get("matches", [])
     if not event_seasons:
-        st.warning("No event-level 2025/26 season is available for set-piece analysis.")
+        st.warning("No event-level season is available for set-piece analysis.")
         st.stop()
 
     control_columns = st.columns([0.9, 1.35, 0.85, 0.85])
     with control_columns[0]:
-        season = st.selectbox("Match Season", event_seasons, key="set_piece_analysis_season")
+        preferred_set_piece_season = data.preferred_season(event_seasons)
+        season = st.selectbox(
+            "Match Season", event_seasons,
+            index=event_seasons.index(preferred_set_piece_season),
+            key="set_piece_analysis_season",
+        )
 
     matches = ma.load_matches(season)
     if matches.empty:

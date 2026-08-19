@@ -318,13 +318,18 @@ if player_summary.empty:
     st.caption("No player entry summary is available for the current zone and action filters.")
 else:
     detail_cols = st.columns([1, 3])
-    min_player_entries = detail_cols[0].slider(
-        "Minimum player entries",
-        1,
-        max(1, int(player_summary["Entries"].max())),
-        1,
-        key="final_third_min_player_entries",
-    )
+    max_player_entries = int(player_summary["Entries"].max())
+    if max_player_entries > 1:
+        min_player_entries = detail_cols[0].slider(
+            "Minimum player entries",
+            1,
+            max_player_entries,
+            1,
+            key="final_third_min_player_entries",
+        )
+    else:
+        min_player_entries = 1
+        detail_cols[0].caption("Every player has at most 1 entry in this selection, so the minimum-entries filter isn't adjustable.")
     detail_cols[1].caption(
         "This section uses the selected zone, action-type and minimum-value filters before the outcome filter, "
         "so success rate still compares successful entries against all attempted entries."

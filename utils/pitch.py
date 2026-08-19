@@ -1719,6 +1719,204 @@ def threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     return fig
 
 
+GOAL_HALF_WIDTH = 3.66
+GOAL_HEIGHT = 2.44
+GOALMOUTH_SIDE_PADDING = 2.0
+GOALMOUTH_TOP_PADDING = 1.35
+GOALMOUTH_BOTTOM_PADDING = 0.12
+GOALMOUTH_TEMPLATE_PATH = ui.ASSETS_DIR / "goalmouth_template.png"
+GOALMOUTH_PALETTE = [RED, DARK, GOLD, BLUE, "#15803d", "#9333ea", "#0e7490", "#b45309", "#be185d", "#4d7c0f"]
+
+
+@lru_cache(maxsize=1)
+def _goalmouth_template_uri() -> str:
+    if not GOALMOUTH_TEMPLATE_PATH.exists():
+        return ""
+    encoded = base64.b64encode(GOALMOUTH_TEMPLATE_PATH.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def goalmouth_shot_map(
+    shots: pd.DataFrame,
+    title: str,
+    group_col: str = "Outcome",
+    group_order: list[str] | None = None,
+    group_colors: dict[str, str] | None = None,
+    group_symbols: dict[str, str] | None = None,
+    height: int = 680,
+) -> go.Figure:
+    """Shots plotted against the goal face using Shot Target Y/Z, from the shooter's view.
+
+    group_col controls what the legend/colour splits on -- 'Outcome' (goal/saved/
+    blocked/...) for a single shooter's execution, or 'Player' for a whole team's
+    shots in one map. Marker size is Post-Shot xG where available, else Shot xG.
+    """
+    fig = go.Figure()
+    target_cols = {"Shot Target Y", "Shot Target Z"}
+    if shots.empty or not target_cols.issubset(shots.columns):
+        fig.add_annotation(text="No Shot Target Coordinates", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
+        return charting.polish_figure(fig, title, height=height)
+
+    target = shots.dropna(subset=["Shot Target Y", "Shot Target Z"]).copy()
+    target["_Goalmouth X"] = -pd.to_numeric(target["Shot Target Y"], errors="coerce")
+    target["_Goalmouth Z"] = pd.to_numeric(target["Shot Target Z"], errors="coerce")
+    target = target.dropna(subset=["_Goalmouth X", "_Goalmouth Z"]).copy()
+    if target.empty:
+        fig.add_annotation(text="No Shot Target Coordinates", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
+        return charting.polish_figure(fig, title, height=height)
+
+    x_min = -(GOAL_HALF_WIDTH + GOALMOUTH_SIDE_PADDING)
+    x_max = GOAL_HALF_WIDTH + GOALMOUTH_SIDE_PADDING
+    y_min = -GOALMOUTH_BOTTOM_PADDING
+    y_max = GOAL_HEIGHT + GOALMOUTH_TOP_PADDING
+    template_uri = _goalmouth_template_uri()
+    if template_uri:
+        fig.add_layout_image(
+            dict(
+                source=template_uri,
+                xref="x",
+                yref="y",
+                x=-GOAL_HALF_WIDTH,
+                y=GOAL_HEIGHT,
+                sizex=GOAL_HALF_WIDTH * 2,
+                sizey=GOAL_HEIGHT,
+                sizing="stretch",
+                opacity=1.0,
+                layer="below",
+            )
+        )
+    else:
+        fig.add_shape(
+            type="rect",
+            x0=-GOAL_HALF_WIDTH, x1=GOAL_HALF_WIDTH, y0=0, y1=GOAL_HEIGHT,
+            line=dict(color=DARK, width=6),
+            fillcolor="rgba(255,255,255,0.92)",
+            layer="below",
+        )
+
+    fig.add_shape(type="line", x0=0, x1=0, y0=0, y1=GOAL_HEIGHT, line=dict(color="rgba(255,255,255,0.34)", width=1.3, dash="dot"))
+    fig.add_shape(type="line", x0=-GOAL_HALF_WIDTH, x1=GOAL_HALF_WIDTH, y0=GOAL_HEIGHT / 2, y1=GOAL_HEIGHT / 2, line=dict(color="rgba(255,255,255,0.26)", width=1.2, dash="dot"))
+    fig.add_shape(type="line", x0=x_min, x1=x_max, y0=GOAL_HEIGHT, y1=GOAL_HEIGHT, line=dict(color="rgba(102,112,133,0.34)", width=1.2, dash="dash"))
+    fig.add_shape(type="line", x0=-GOAL_HALF_WIDTH, x1=-GOAL_HALF_WIDTH, y0=y_min, y1=y_max, line=dict(color="rgba(102,112,133,0.28)", width=1.2, dash="dash"))
+    fig.add_shape(type="line", x0=GOAL_HALF_WIDTH, x1=GOAL_HALF_WIDTH, y0=y_min, y1=y_max, line=dict(color="rgba(102,112,133,0.28)", width=1.2, dash="dash"))
+
+    size_source = pd.to_numeric(target.get("Post-Shot xG"), errors="coerce") if "Post-Shot xG" in target else pd.Series(np.nan, index=target.index)
+    size_source = size_source.fillna(pd.to_numeric(target.get("Shot xG"), errors="coerce"))
+    target["_Size Value"] = size_source.fillna(0)
+    max_size_value = max(float(target["_Size Value"].max()), 0.08)
+
+    groups_present = target[group_col].fillna("Unknown").astype(str).unique().tolist() if group_col in target else ["Unknown"]
+    ordered_groups = [g for g in (group_order or []) if g in groups_present]
+    ordered_groups += [g for g in groups_present if g not in ordered_groups]
+    colors = group_colors or {group: GOALMOUTH_PALETTE[index % len(GOALMOUTH_PALETTE)] for index, group in enumerate(ordered_groups)}
+    symbols = group_symbols or {}
+
+    for group in ordered_groups:
+        rows = target[target[group_col].fillna("Unknown").astype(str) == group].copy() if group_col in target else target.copy()
+        if rows.empty:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=rows["_Goalmouth X"],
+                y=rows["_Goalmouth Z"],
+                mode="markers",
+                name=group,
+                cliponaxis=False,
+                marker=dict(
+                    size=12 + (rows["_Size Value"] / max_size_value) * 28,
+                    color=colors.get(group, GREY),
+                    symbol=symbols.get(group, "circle"),
+                    opacity=0.88,
+                    line=dict(color="#ffffff", width=1.2),
+                ),
+                customdata=np.stack(
+                    [
+                        rows["Player"].fillna("Unknown") if "Player" in rows else pd.Series("Unknown", index=rows.index),
+                        rows["Minute"].fillna(0) if "Minute" in rows else pd.Series(0, index=rows.index),
+                        pd.to_numeric(rows.get("Shot xG"), errors="coerce").fillna(0) if "Shot xG" in rows else pd.Series(0.0, index=rows.index),
+                        pd.to_numeric(rows.get("Post-Shot xG"), errors="coerce").fillna(0) if "Post-Shot xG" in rows else pd.Series(0.0, index=rows.index),
+                        rows[group_col].fillna("Unknown").astype(str) if group_col in rows else pd.Series("Unknown", index=rows.index),
+                    ],
+                    axis=-1,
+                ),
+                hovertemplate="%{customdata[0]} - %{customdata[4]}<br>Minute: %{customdata[1]:.0f}<br>xG: %{customdata[2]:.3f}<br>Post-shot xG: %{customdata[3]:.3f}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        height=height,
+        xaxis_title="<b>Target Width</b>",
+        yaxis_title="<b>Target Height</b>",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_xaxes(range=[x_min, x_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
+    fig.update_yaxes(range=[y_min, y_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
+    return charting.polish_figure(fig, title)
+
+
+def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
+    """Cumulative signed expected-threat (PXT Pass + PXT Shot) by minute, per team.
+
+    Unlike threat_timeline (which takes the max of several threat-ish fields,
+    clipped at zero, and falls back to Team xT's positional value), this uses
+    only the two Impect fields that represent a specific player's marginal
+    threat contribution -- PXT Pass (passes and clearances) and PXT Shot --
+    summed as signed values so a misplaced pass nets against the team total
+    rather than being dropped.
+    """
+    fig = go.Figure()
+    if events.empty:
+        fig = charting.polish_figure(fig, title, height=500)
+        fig.add_annotation(text="No expected-threat events", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
+        return fig
+
+    values = events.copy()
+    pxt_pass = pd.to_numeric(values.get("PXT Pass"), errors="coerce") if "PXT Pass" in values else pd.Series(0.0, index=values.index)
+    pxt_shot = pd.to_numeric(values.get("PXT Shot"), errors="coerce") if "PXT Shot" in values else pd.Series(0.0, index=values.index)
+    values["xT Value"] = pxt_pass.fillna(0.0) + pxt_shot.fillna(0.0)
+    values["Minute"] = pd.to_numeric(values["Minute"], errors="coerce").fillna(0).astype(int)
+    values = values[values["xT Value"] != 0]
+    if values.empty:
+        fig = charting.polish_figure(fig, title, height=500)
+        fig.add_annotation(text="No expected-threat events", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
+        return fig
+
+    minute_values = values.groupby(["Team", "Minute"], as_index=False)["xT Value"].sum().sort_values(["Team", "Minute"])
+    colors = [RED, DARK, GOLD, BLUE]
+    for index, (team, group) in enumerate(minute_values.groupby("Team", sort=False)):
+        group = group.copy()
+        group["Cumulative xT"] = group["xT Value"].cumsum()
+        fig.add_trace(
+            go.Scatter(
+                x=group["Minute"],
+                y=group["Cumulative xT"],
+                mode="lines",
+                name=str(team),
+                line=dict(color=colors[index % len(colors)], width=3, shape="hv"),
+                hovertemplate=f"{team}<br>Minute: %{{x:.0f}}<br>Cumulative xT: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(height=540, xaxis_title="Minute", yaxis_title="Cumulative expected threat (PXT)")
+    fig.update_xaxes(range=[0, max(96, _finite(values["Minute"].max(), 96))], dtick=15)
+    fig.update_yaxes(tickformat=".2f")
+    fig = charting.polish_figure(fig, title)
+    fig.update_layout(
+        margin=dict(l=52, r=34, t=104, b=58),
+        title=dict(text=title, font=dict(size=20, color=DARK), x=0.01, xanchor="left", y=0.98, yanchor="top"),
+        legend=dict(
+            bgcolor="rgba(255,255,255,0)",
+            borderwidth=0,
+            font=dict(size=12),
+            orientation="h",
+            yanchor="bottom",
+            y=1.03,
+            xanchor="left",
+            x=0.01,
+            title=dict(text=""),
+        ),
+    )
+    return fig
+
+
 def _empty_pitch_message(fig: go.Figure, text: str) -> None:
     fig.add_annotation(
         text=text,

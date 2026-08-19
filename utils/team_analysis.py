@@ -255,7 +255,8 @@ def select_season(kind: str = "teams", key: str | None = None) -> str | None:
     if not seasons:
         st.caption("No season selector is available from the data source.")
         return None
-    return st.selectbox("Season", seasons, index=len(seasons) - 1, key=key)
+    default = data.preferred_season(seasons)
+    return st.selectbox("Season", seasons, index=seasons.index(default), key=key)
 
 
 def load_team_data(season: str | None = None) -> pd.DataFrame:

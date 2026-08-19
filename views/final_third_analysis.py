@@ -781,12 +781,16 @@ with st.expander("Final Third Analysis Controls", expanded=True):
         zone_label = ft.zone_title(zone)
 
     with control_cols[2]:
+        # Key includes team_name so switching teams gets a fresh widget with a
+        # correct default -- a fixed key would keep the previous team's
+        # selected MatchIds, none of which exist in the new team's options,
+        # silently emptying the selection and stopping the whole page below.
         selected_match_ids = st.multiselect(
             "Matches",
             match_options,
             default=match_options,
             format_func=lambda match_id: match_label_lookup.get(str(match_id), str(match_id)),
-            key="final_third_analysis_matches",
+            key=f"final_third_analysis_matches_{team_name}",
         )
 
     if not selected_match_ids:

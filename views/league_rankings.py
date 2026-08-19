@@ -992,10 +992,11 @@ with st.container(border=True):
     st.caption("Choose the season and focus team once. Metric-specific controls sit inside the relevant comparison view.")
     setup_columns = st.columns([0.8, 1.35])
     with setup_columns[0]:
+        preferred_season = data.preferred_season(season_options)
         season = st.selectbox(
             "Season",
             season_options,
-            index=len(season_options) - 1,
+            index=season_options.index(preferred_season),
             key="league_rankings_season",
         )
 

@@ -566,7 +566,7 @@ def _select_player_metric_season(match_season: str | None) -> str | None:
     if not seasons:
         st.caption("No player metric season selector is available from the data source.")
         return None
-    default_index = seasons.index(match_season) if match_season in seasons else 0
+    default_index = seasons.index(match_season) if match_season in seasons else len(seasons) - 1
     return st.selectbox("Player Metric Season", seasons, index=default_index, key="ratings_player_season")
 
 
@@ -577,7 +577,14 @@ def _select_match_season_for_ratings() -> str | None:
         st.caption("No match season selector is available from the data source.")
         return None
     player_seasons = set(season_map.get("players", []))
-    default_index = next((index for index, season in enumerate(seasons) if season in player_seasons), 0)
+    # Search from the most recent season backward: some seasons are listed by
+    # the data source without having any actual match rows yet (or any more),
+    # and matching the oldest such season by scanning forward left this page
+    # defaulting to a dead season with a warning on first load.
+    default_index = next(
+        (index for index in range(len(seasons) - 1, -1, -1) if seasons[index] in player_seasons),
+        len(seasons) - 1,
+    )
     return st.selectbox("Match Season", seasons, index=default_index, key="ratings_match_season")
 
 

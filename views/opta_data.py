@@ -41,9 +41,20 @@ team_options = sorted(
     .tolist()
 )
 
+_charlton_mask = (
+    fixtures["Home"].astype(str).str.contains("charlton", case=False, na=False)
+    | fixtures["Away"].astype(str).str.contains("charlton", case=False, na=False)
+)
+
+
+def _opta_charlton_match_count(season_value: str) -> int:
+    return int((_charlton_mask & fixtures["Season"].astype(str).eq(str(season_value))).sum())
+
+
 controls = st.columns([0.8, 1.2])
 with controls[0]:
-    season = st.selectbox("Season", season_options, index=len(season_options) - 1)
+    preferred_season = data.preferred_season(season_options, match_count=_opta_charlton_match_count)
+    season = st.selectbox("Season", season_options, index=season_options.index(preferred_season))
 with controls[1]:
     charlton_index = next(
         (index + 1 for index, team in enumerate(team_options) if "charlton" in team.casefold()),

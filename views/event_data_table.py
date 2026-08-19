@@ -342,3 +342,41 @@ else:
         unsafe_allow_html=True,
     )
     st.plotly_chart(_action_summary_chart(summary), width="stretch")
+
+ma.section_heading("Event rows")
+if filtered.empty:
+    st.caption("The current filters remove all event rows.")
+else:
+    st.caption(f"{len(filtered):,} of {len(events):,} event rows match the current filters.")
+    table_cols = ma.available_columns(
+        filtered,
+        [
+            "Minute",
+            "Period",
+            "Team",
+            "Player",
+            "Position",
+            "Action Type",
+            "Action",
+            "Body Part",
+            "Result",
+            "Pressure",
+            "Start X",
+            "Start Y",
+            "End X",
+            "End Y",
+            "Receiver",
+            "Team xT",
+            "PXT Pass",
+            "PXT Shot",
+            "Shot xG",
+            "Set Piece",
+        ],
+    )
+    st.dataframe(filtered[table_cols].sort_values("Minute"), width="stretch", hide_index=True)
+    st.download_button(
+        "Download filtered event rows (CSV)",
+        filtered[table_cols].to_csv(index=False),
+        file_name=f"event_data_{str(match_row.get('MatchId', 'match'))}.csv",
+        mime="text/csv",
+    )

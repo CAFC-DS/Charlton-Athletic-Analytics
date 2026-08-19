@@ -24,6 +24,12 @@ DEFINITIONS = {
     "Passes to Final 3rd /90": "Passes into the attacking third, per 90 minutes played.",
     "Home Goals": "Goals scored by the provider-identified home team in a match (an actual match total, not a per-90 rate).",
     "Away Goals": "Goals scored by the provider-identified away team in a match (an actual match total, not a per-90 rate).",
+    "xG /90": "Impect's expected-goals value of a team or player's shots, per 90 minutes — how many goals the shots taken were worth based on shot quality, regardless of whether they went in.",
+    "Packing xG /90": "Impect's packing-weighted expected goals per 90 — an action's xG contribution scaled by how many opponents it took out of the game, crediting progression as well as the shot itself.",
+    "Shots /90": "Total shot attempts (on target plus off target), per 90 minutes.",
+    "Ball Wins /90": "Impect's count of possessions regained, per 90 minutes.",
+    "Ball Win Value /90": "Impect's packing-weighted value of a ball win — how many opponents were taken out of the game by regaining possession where and when it happened, per 90 minutes.",
+    "Dribble Progression /90": "Distance carried toward the opponent's goal via dribble or carry, per 90 minutes — a progression measure distinct from passing.",
 }
 
 sections = {
@@ -42,7 +48,7 @@ for section, metrics in sections.items():
             "Definition": DEFINITIONS.get(metric, "No definition yet."),
         })
 app_glossary = pd.DataFrame(rows)
-st.dataframe(app_glossary, use_container_width=True, hide_index=True)
+st.dataframe(app_glossary, width="stretch", hide_index=True)
 
 undefined = app_glossary.loc[app_glossary["Definition"] == "No definition yet.", "Metric"].unique()
 if len(undefined):
@@ -97,5 +103,5 @@ categories = ["All"] + sorted(glossary_df["Category"].unique())
 category = st.selectbox("Category", categories)
 filtered = glossary_df if category == "All" else glossary_df[glossary_df["Category"] == category]
 
-st.dataframe(filtered.sort_values("Term").reset_index(drop=True), use_container_width=True, hide_index=True)
+st.dataframe(filtered.sort_values("Term").reset_index(drop=True), width="stretch", hide_index=True)
 st.caption(f"{len(filtered)} terms shown.")

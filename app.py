@@ -52,6 +52,7 @@ player_pages = [
     st.Page("views/passing_dashboard.py", title="Passing Dashboard", icon=":material/sync_alt:"),
     st.Page("views/shooting_dashboard.py", title="Shooting Dashboard", icon=":material/sports_soccer:"),
     st.Page("views/similar_player_search.py", title="Similar Player Search", icon=":material/manage_search:"),
+    st.Page("views/player_build_up_involvement.py", title="Build-Up Involvement", icon=":material/timeline:"),
     st.Page("views/player_data_table.py", title="Player Data Table", icon=":material/table:"),
 ]
 
@@ -59,6 +60,7 @@ match_pages = [
     st.Page("views/match_overview.py", title="Match Overview", icon=":material/stadium:"),
     st.Page("views/set_piece_review.py", title="Set Piece Review", icon=":material/sports_soccer:"),
     st.Page("views/xg_timeline.py", title="xG Timeline", icon=":material/timeline:"),
+    st.Page("views/expected_threat.py", title="Expected Threat", icon=":material/bolt:"),
     st.Page("views/game_control_momentum.py", title="Game Control / Momentum", icon=":material/query_stats:"),
     st.Page("views/shot_map.py", title="Shot Map", icon=":material/my_location:"),
     st.Page("views/pass_map.py", title="Pass Map", icon=":material/route:"),

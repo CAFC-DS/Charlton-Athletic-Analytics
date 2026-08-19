@@ -380,7 +380,7 @@ st.markdown(
 )
 st.plotly_chart(
     _radar_chart(radar_rows, selected_player_labels, selected_metrics, mode),
-    use_container_width=True,
+    width="stretch",
     config={"displayModeBar": False, "responsive": True},
     key=f"player_radar_chart_{pa.safe_key(mode)}_{len(selected_metrics)}_{'_'.join(pa.safe_key(name) for name in selected_player_labels)}",
 )

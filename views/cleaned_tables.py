@@ -27,7 +27,12 @@ seasons = data.list_seasons()
 tab_players, tab_teams, tab_matches = st.tabs(["Players", "Teams", "Matches"])
 
 with tab_players:
-    season = st.selectbox("Season", seasons["players"], index=len(seasons["players"]) - 1, key="clean_players_season")
+    preferred_players_season = data.preferred_season(seasons["players"])
+    season = st.selectbox(
+        "Season", seasons["players"],
+        index=seasons["players"].index(preferred_players_season),
+        key="clean_players_season",
+    )
     players = data.load_players(season=season).copy()
 
     players["Position"] = players["Position"].apply(_clean_position)
@@ -36,22 +41,32 @@ with tab_players:
         players[col] = players[col].round(2)
 
     players = players.sort_values("Minutes", ascending=False).reset_index(drop=True)
-    st.dataframe(players, use_container_width=True, hide_index=True)
+    st.dataframe(players, width="stretch", hide_index=True)
     st.caption(f"{len(players)} players, sorted by minutes played (most-featured first).")
 
 with tab_teams:
-    season = st.selectbox("Season", seasons["teams"], index=len(seasons["teams"]) - 1, key="clean_teams_season")
+    preferred_teams_season = data.preferred_season(seasons["teams"])
+    season = st.selectbox(
+        "Season", seasons["teams"],
+        index=seasons["teams"].index(preferred_teams_season),
+        key="clean_teams_season",
+    )
     teams = data.load_teams(season=season).copy()
 
     for col in ["Goals /90", "Assists /90", "Bypassed Opponents /90", "Passes to Final 3rd /90"]:
         teams[col] = teams[col].round(2)
 
     teams = teams.sort_values("Goals /90", ascending=False).reset_index(drop=True)
-    st.dataframe(teams, use_container_width=True, hide_index=True)
+    st.dataframe(teams, width="stretch", hide_index=True)
     st.caption(f"{len(teams)} teams, sorted by Goals /90 (highest first).")
 
 with tab_matches:
-    season = st.selectbox("Season", seasons["matches"], index=len(seasons["matches"]) - 1, key="clean_matches_season")
+    preferred_matches_season = data.preferred_season(seasons["matches"])
+    season = st.selectbox(
+        "Season", seasons["matches"],
+        index=seasons["matches"].index(preferred_matches_season),
+        key="clean_matches_season",
+    )
     matches = data.load_matches(season=season).copy()
 
     matches["Home Goals"] = matches["Home Goals"].astype(int)
@@ -61,7 +76,7 @@ with tab_matches:
                         "Away", "Away Goals", "Result", "Venue Verified"]]
     matches = matches.sort_values("Date", ascending=False).reset_index(drop=True)
 
-    st.dataframe(matches, use_container_width=True, hide_index=True)
+    st.dataframe(matches, width="stretch", hide_index=True)
     st.caption(f"{len(matches)} matches, most recent first.")
     if not matches["Venue Verified"].all():
         st.caption(

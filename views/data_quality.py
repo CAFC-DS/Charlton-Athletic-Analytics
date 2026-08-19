@@ -36,9 +36,20 @@ if not data.USE_MOCK_DATA:
         st.error("One or more CAFC_DB source layers is unavailable to the current Snowflake role.")
     st.divider()
 
-players = data.load_players()
-teams = data.load_teams()
-matches = data.load_matches()
+# Every dataset below takes an optional season; without one, each loader
+# silently resolves to whichever season sorts last (the newest -- often the
+# one with the fewest matches played so far), with no way to check a
+# completed prior season instead.
+season_options = sorted(data.list_seasons().get("players", []))
+if not season_options:
+    st.warning("No seasons are available to check.")
+    st.stop()
+preferred_season = data.preferred_season(season_options)
+season = st.selectbox("Season", season_options, index=season_options.index(preferred_season))
+
+players = data.load_players(season=season)
+teams = data.load_teams(season=season)
+matches = data.load_matches(season=season)
 
 METRIC_COLS = ["Goals /90", "Assists /90", "Bypassed Opponents /90", "Passes to Final 3rd /90"]
 
@@ -50,11 +61,11 @@ def check(name: str, ok: bool, detail: str, offending: pd.DataFrame | None = Non
 def render_checks(title: str, checks: list[dict]) -> None:
     st.subheader(title)
     summary = pd.DataFrame([{"Check": c["Check"], "Status": c["Status"], "Detail": c["Detail"]} for c in checks])
-    st.dataframe(summary, use_container_width=True, hide_index=True)
+    st.dataframe(summary, width="stretch", hide_index=True)
     for c in checks:
         if c["_rows"] is not None and len(c["_rows"]):
             with st.expander(f"Show affected rows — {c['Check']}"):
-                st.dataframe(c["_rows"], use_container_width=True, hide_index=True)
+                st.dataframe(c["_rows"], width="stretch", hide_index=True)
 
 
 # ---- Players -----------------------------------------------------------------
@@ -63,6 +74,11 @@ bad_pass_pct = players[(players["Pass %"] < 0) | (players["Pass %"] > 100)]
 negative_stats = players[(players[METRIC_COLS] < 0).any(axis=1)]
 dupes = players[players.duplicated(subset=["Player", "Team", "Season"], keep=False)]
 implausible_minutes = players[(players["Minutes"] < 0) | (players["Minutes"] > 4500)]
+# Range checks alone pass trivially on an all-NaN column (NaN < 0 and NaN >
+# 4500 both evaluate False), so a dtype bug that silently nulled out a whole
+# column would slip through as "Pass" without this explicit check.
+missing_minutes = players[players["Minutes"].isna()]
+missing_metrics = players[players[METRIC_COLS].isna().all(axis=1)]
 
 render_checks(f"Players ({len(players)} rows)", [
     check("Player and team identified for every row", len(missing_id) == 0,
@@ -75,6 +91,10 @@ render_checks(f"Players ({len(players)} rows)", [
           f"{len(dupes)} row(s) sharing the same player, team and season.", dupes),
     check("Minutes played within a plausible season range (0-4,500)", len(implausible_minutes) == 0,
           f"{len(implausible_minutes)} player(s) outside that range.", implausible_minutes),
+    check("Minutes is populated (not silently blank)", len(missing_minutes) == 0,
+          f"{len(missing_minutes)} player(s) with no Minutes value at all -- distinct from 0 minutes played.", missing_minutes),
+    check("At least one per-90 metric is populated per player", len(missing_metrics) == 0,
+          f"{len(missing_metrics)} player(s) with every tracked per-90 metric blank -- likely a join/merge gap rather than a genuinely metric-free player.", missing_metrics),
 ])
 st.divider()
 

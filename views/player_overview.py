@@ -298,7 +298,7 @@ _ranking_summary(row, metric, players)
 _ranking_legend(metric, players)
 st.plotly_chart(
     _ranking_chart(players, metric, selected=player_name, top_n=top_n),
-    use_container_width=True,
+    width="stretch",
     config={"displayModeBar": False, "responsive": True},
     key=f"player_overview_ranking_{pa.safe_key(player_name)}_{pa.safe_key(metric)}_{top_n}",
 )

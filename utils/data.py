@@ -82,6 +82,11 @@ PLAYER_KPI_IDS = {
     "Save Actions /90": 1517,
 }
 
+# KPI ids that are only meaningful for a goalkeeper position-stint. Used by
+# load_players() to decide where a missing KPI row means "zero" vs "not
+# applicable to this position" -- see the comment at that loop.
+_GOALKEEPING_ONLY_KPI_IDS = {1460, 1462, 1517}  # Goals Conceded, Post-Shot xG Faced, Save Actions
+
 TEAM_KPI_IDS = {
     "Bypassed Opponents /90": 0,
     "Goals /90": 28,
@@ -154,6 +159,36 @@ DEFENSIVE_PLAYER_KPI_IDS = {
         "Aerial Duels Lost",
     ]
 }
+
+# Impect's ACTION values for an open-play cross, both nested under ACTION_TYPE='PASS'.
+CROSS_ACTIONS = {"LOW_CROSS", "HIGH_CROSS"}
+
+# Event action types whose EVENT_KPIS carry a per-event PXT (packing xT) value --
+# PXT_PASS on PASS/CLEARANCE, PXT_SHOT on SHOT. Used to scope event loads for
+# expected-threat aggregation without pulling every action type.
+XT_ACTION_TYPES = ["PASS", "SHOT", "CLEARANCE"]
+
+
+def is_cross(frame: pd.DataFrame) -> pd.Series:
+    """True where an event row is an open-play cross (Impect ACTION LOW_CROSS/HIGH_CROSS)."""
+    if frame.empty or "Action" not in frame:
+        return pd.Series(False, index=frame.index, dtype=bool)
+    return frame["Action"].astype(str).str.upper().isin(CROSS_ACTIONS)
+
+
+def event_xt_value(frame: pd.DataFrame) -> pd.Series:
+    """Per-event expected-threat value: signed PXT Pass (incl. clearances) plus PXT Shot.
+
+    Both fields are Impect's packing-xT delta for that specific action -- the
+    threat a player's pass/shot/clearance added or removed -- and are mutually
+    exclusive by action type, so a plain fillna(0) sum does not double-count.
+    """
+    if frame.empty:
+        return pd.Series(dtype="float64")
+    pxt_pass = pd.to_numeric(frame["PXT Pass"], errors="coerce") if "PXT Pass" in frame else pd.Series(0.0, index=frame.index)
+    pxt_shot = pd.to_numeric(frame["PXT Shot"], errors="coerce") if "PXT Shot" in frame else pd.Series(0.0, index=frame.index)
+    return pxt_pass.fillna(0.0) + pxt_shot.fillna(0.0)
+
 
 PLAYER_METRICS = ["Goals /90", "Assists /90", "Bypassed Opponents /90", "Pass %", "Passes to Final 3rd /90"]
 PLAYER_PROFILE_METRICS = [
@@ -1127,16 +1162,136 @@ def _legacy_load_team_iteration_rollups(season: str | None = None) -> pd.DataFra
     return load_team_iteration_rollups(season)
 
 
+def _kpi_iteration_ids(table_key: str) -> set[int]:
+    """Iteration ids that have at least one row in the given season-level KPI facts table."""
+    if USE_MOCK_DATA:
+        return {1410}
+    rows = get_connection().query(
+        f"""
+        SELECT DISTINCT IMPECT_ITERATION_ID AS "IterationId"
+        FROM {relation(table_key)}
+        WHERE IMPECT_ITERATION_ID IS NOT NULL
+        """,
+        ttl="6h",
+    )
+    if rows.empty:
+        return set()
+    return set(pd.to_numeric(rows["IterationId"], errors="coerce").dropna().astype(int))
+
+
 def list_seasons() -> dict[str, list[str]]:
-    """League seasons available from authoritative CAFC_DB Impect sources."""
+    """League seasons available from authoritative CAFC_DB Impect sources.
+
+    "matches"/"players"/"teams" are validated separately against where that
+    kind of data actually resolves, rather than returning one undifferentiated
+    season list for all three. A season can have provider KPI facts but no raw
+    event coverage (e.g. Charlton's older League One seasons), or vice versa --
+    offering it on a page that has nothing for it just produces a dead "no
+    data available" menu option. Player/team seasons also count iterations
+    with event coverage, since load_players()/load_teams() can compute from
+    raw events when the KPI facts tables are empty (e.g. the newest season).
+    """
     if USE_MOCK_DATA:
         return {"players": ["2025/26"], "teams": ["2025/26"], "matches": ["2025/26"]}
 
     contexts = _league_contexts()
     if contexts.empty:
         return {"players": [], "teams": [], "matches": []}
-    league_seasons = contexts["Season"].dropna().astype(str).drop_duplicates().sort_values().tolist()
-    return {"players": league_seasons, "teams": league_seasons, "matches": league_seasons}
+
+    event_iterations = _event_iteration_ids()
+    player_kpi_iterations = _kpi_iteration_ids("impect_iteration_player_kpis")
+    team_kpi_iterations = _kpi_iteration_ids("impect_iteration_squad_kpis")
+
+    def _seasons_for(iteration_ids: set[int]) -> list[str]:
+        subset = contexts[contexts["IterationId"].astype("Int64").isin(iteration_ids)]
+        return subset["Season"].dropna().astype(str).drop_duplicates().sort_values().tolist()
+
+    return {
+        "matches": _seasons_for(event_iterations),
+        "players": _seasons_for(player_kpi_iterations | event_iterations),
+        "teams": _seasons_for(team_kpi_iterations | event_iterations),
+    }
+
+
+MIN_MATCHES_FOR_DEFAULT_SEASON = 5
+
+
+def _charlton_match_count(season: str) -> int:
+    """How many of Charlton's own matches are available for this season.
+
+    Deliberately team-count-independent (unlike a raw league-wide match
+    total, which scales with how many clubs are in the competition and can
+    look "substantial" after just one round -- 11 league-wide matches in a
+    24-team league is only ~1 game week per team, not 11 games of signal).
+    """
+    matches = load_matches(season)
+    if matches.empty or "Home" not in matches or "Away" not in matches:
+        return 0
+    is_charlton = (
+        matches["Home"].astype(str).str.contains("charlton", case=False, na=False)
+        | matches["Away"].astype(str).str.contains("charlton", case=False, na=False)
+    )
+    return int(is_charlton.sum())
+
+
+def preferred_season(seasons: list[str], match_count: "Callable[[str], int] | None" = None) -> str | None:
+    """Most recent season with a substantial number of matches, else the newest available.
+
+    Defaulting a season selector to the very latest season is wrong right
+    after a new season has just started (e.g. one game week in) -- every
+    page would open by default to a near-empty, unrepresentative sample.
+    This only second-guesses the newest season in the list (anything else is
+    already a completed past season); everything else about the selector is
+    unchanged, and the user can still pick the newest season manually.
+
+    ``match_count`` lets callers substitute a different match-count source
+    (e.g. Opta fixtures instead of Impect matches, or a different team) for
+    pages built on a different provider's season labels; it defaults to
+    this module's own Impect-backed count of Charlton's own matches.
+    """
+    if not seasons:
+        return None
+    latest = seasons[-1]
+    if len(seasons) == 1:
+        return latest
+    counter = match_count or _charlton_match_count
+    if counter(latest) >= MIN_MATCHES_FOR_DEFAULT_SEASON:
+        return latest
+    return seasons[-2]
+
+
+def _team_match_counts(iteration_ids: list[int]) -> pd.DataFrame:
+    """Actual matches played per (IterationId, TeamId) -- the hard ceiling for any single player's Match Share.
+
+    A player's Match Share for one position-stint can never exceed their own
+    team's total match count for the season; that's a mathematical fact, not
+    an estimate, so it's used to defensively cap occasional bad KPI rows
+    (see load_players()) rather than guessing at a plausible-looking limit.
+    """
+    columns = ["IterationId", "TeamId", "TeamMatches"]
+    if not iteration_ids:
+        return pd.DataFrame(columns=columns)
+    placeholders = ", ".join(["?"] * len(iteration_ids))
+    rows = get_connection().query(
+        f"""
+        SELECT "IterationId", "TeamId", SUM("TeamMatches") AS "TeamMatches"
+        FROM (
+            SELECT ITERATION_ID AS "IterationId", HOME_SQUAD_ID AS "TeamId", COUNT(*) AS "TeamMatches"
+            FROM {relation("impect_matches")}
+            WHERE ITERATION_ID IN ({placeholders})
+            GROUP BY ITERATION_ID, HOME_SQUAD_ID
+            UNION ALL
+            SELECT ITERATION_ID AS "IterationId", AWAY_SQUAD_ID AS "TeamId", COUNT(*) AS "TeamMatches"
+            FROM {relation("impect_matches")}
+            WHERE ITERATION_ID IN ({placeholders})
+            GROUP BY ITERATION_ID, AWAY_SQUAD_ID
+        )
+        GROUP BY "IterationId", "TeamId"
+        """,
+        params=_snowflake_params([*iteration_ids, *iteration_ids]),
+        ttl="6h",
+    )
+    return rows[columns] if not rows.empty else pd.DataFrame(columns=columns)
 
 
 def load_players(season: str | None = None) -> pd.DataFrame:
@@ -1189,6 +1344,28 @@ def load_players(season: str | None = None) -> pd.DataFrame:
         )
         .reset_index()
     )
+
+    # Defensive cap: a single position-stint's Match Share cannot exceed the
+    # player's own team's actual match count for the season -- occasionally a
+    # source KPI row has an implausible Match Share (seen live: 49.33 for a
+    # team that played 46 matches all season), which would otherwise silently
+    # inflate that player's Minutes and every per-90 rate derived from it.
+    # When a row is capped, Play Duration Seconds is scaled down by the same
+    # ratio so the implied average minutes-per-match is preserved rather than
+    # guessed at.
+    team_matches = _team_match_counts(iteration_ids)
+    position_meta = position_meta.merge(team_matches, on=["IterationId", "TeamId"], how="left")
+    match_share = pd.to_numeric(position_meta["Match Share"], errors="coerce")
+    team_cap = pd.to_numeric(position_meta["TeamMatches"], errors="coerce")
+    exceeds_cap = match_share.notna() & team_cap.notna() & match_share.gt(team_cap)
+    if exceeds_cap.any():
+        clip_ratio = (team_cap / match_share).where(exceeds_cap, 1.0)
+        position_meta["Play Duration Seconds"] = (
+            pd.to_numeric(position_meta["Play Duration Seconds"], errors="coerce") * clip_ratio
+        )
+        position_meta["Match Share"] = match_share.where(~exceeds_cap, team_cap)
+    position_meta = position_meta.drop(columns=["TeamMatches"])
+
     position_rows = position_meta.merge(
         _pivot_long_kpis(long_values, position_keys, "KpiId", "KpiValue"),
         on=position_keys,
@@ -1217,11 +1394,28 @@ def load_players(season: str | None = None) -> pd.DataFrame:
     )
 
     groupers = [position_rows[column] for column in player_keys]
+    is_goalkeeper_stint = position_rows["Position"].astype(str).str.upper().eq("GOALKEEPER")
     for output_column, kpi_id in PLAYER_KPI_IDS.items():
         if kpi_id not in position_rows:
             players[output_column] = np.nan
             continue
         metric = pd.to_numeric(position_rows[kpi_id], errors="coerce")
+        # Impect's KPI facts only store a row for a (player, position) stint
+        # when that KPI's value is non-zero there -- there is no explicit
+        # zero row. Treating a missing row as "exclude this stint's minutes"
+        # (the old behaviour) silently shrinks the per-90 denominator to
+        # whichever position happened to have a non-zero row, while the
+        # "Minutes" total shown alongside it still counts every position --
+        # e.g. a player's Goals /90 could be computed from a single 15-minute
+        # substitute cameo while "Minutes: 620" is displayed next to it. A
+        # missing row means zero for that stint, not "not applicable", with
+        # one exception: goalkeeping-only KPIs (saves, goals conceded, etc.)
+        # genuinely don't apply to an outfield stint, so those only get
+        # zero-filled within the player's own goalkeeper stints.
+        if kpi_id in _GOALKEEPING_ONLY_KPI_IDS:
+            metric = metric.where(~(is_goalkeeper_stint & metric.isna()), 0.0)
+        else:
+            metric = metric.fillna(0.0)
         duration = position_rows["Play Duration Seconds"].where(metric.notna())
         numerator = (metric * position_rows["Play Duration Seconds"]).groupby(
             groupers, dropna=False
@@ -3256,6 +3450,278 @@ def load_opta_lineups(fixture_id: object | None = None) -> pd.DataFrame:
         ttl="30m",
     )
     return rows[OPTA_LINEUP_COLUMNS] if not rows.empty else pd.DataFrame(columns=OPTA_LINEUP_COLUMNS)
+
+
+# ---- SUBSTITUTIONS (Opta F24 events; Impect has no substitution rows) --------
+# CAFC_DB does not expose a labelled Opta event-type or qualifier dictionary
+# (see load_opta_events), so these TypeId values are the well-established
+# public Opta F24 taxonomy, empirically verified against this database: pass
+# completion rate, shots/match and goals/match (2.78 avg) all landed at
+# realistic real-world figures for the mapped codes below.
+OPTA_TYPE_PLAYER_OFF = 18
+OPTA_TYPE_PLAYER_ON = 19
+OPTA_TYPE_GOAL = 16
+OPTA_TYPE_PASS = 1
+_POSITION_RANK: dict[str, int] = {
+    "GOALKEEPER": 0,
+    "DEFENDER": 1,
+    "MIDFIELDER": 2,
+    "FORWARD": 3,
+    "STRIKER": 3,
+}
+SUBSTITUTION_COLUMNS = [
+    "FixtureId",
+    "Season",
+    "Date",
+    "TeamId",
+    "Team",
+    "Opponent",
+    "Period",
+    "Minute",
+    "Second",
+    "Sub Number",
+    "PlayerOffId",
+    "Player Off",
+    "Position Off",
+    "PlayerOnId",
+    "Player On",
+    "Position On",
+    "Shift Type",
+    "Team Goals At Sub",
+    "Opponent Goals At Sub",
+    "Score State",
+    "Goals After Entry",
+    "Assists After Entry",
+]
+
+
+def _shift_type(position_off: object, position_on: object) -> str:
+    off_rank = _POSITION_RANK.get(str(position_off or "").strip().upper())
+    on_rank = _POSITION_RANK.get(str(position_on or "").strip().upper())
+    if off_rank is None or on_rank is None:
+        return "Unclear"
+    if off_rank == on_rank:
+        return "Like-for-Like"
+    return "More Attacking" if on_rank > off_rank else "More Defensive"
+
+
+def _score_state(team_goals: int, opponent_goals: int) -> str:
+    if team_goals > opponent_goals:
+        return "Winning"
+    if team_goals < opponent_goals:
+        return "Losing"
+    return "Drawing"
+
+
+def load_opta_goal_events(season: str | None = None, team: str | None = None) -> pd.DataFrame:
+    """Lightweight season-wide goal (TypeId 16) events -- one query, no per-match loop.
+
+    Used for team goal-timing context; a naive per-fixture loop over
+    ``load_opta_events`` would need dozens of round-trips for a full season.
+    """
+    columns = ["FixtureId", "Date", "Team", "PlayerId", "Player", "Minute", "Second"]
+    if USE_MOCK_DATA:
+        return pd.DataFrame(columns=columns)
+
+    clauses = ["e.TYPE_ID = 16"]
+    params: list[object] = []
+    if season:
+        season_key = _season_key(season)
+        start_year = season_key.split("/")[0]
+        if len(start_year) == 2 and start_year.isdigit():
+            start_year = f"20{start_year}"
+        clauses.append("TO_VARCHAR(f.SEASON) = ?")
+        params.append(start_year)
+    if team:
+        clauses.append("(f.HOME_TEAM_NAME = ? OR f.AWAY_TEAM_NAME = ?)")
+        params.extend([team, team])
+
+    rows = get_connection().query(
+        f"""
+        SELECT
+            e.FIXTURE_ID AS "FixtureId",
+            f.MATCH_DATE AS "Date",
+            COALESCE(NULLIF(t.OFFICIAL_TEAM_NAME, ''), NULLIF(t.TEAM_NAME, ''), e.OPTA_TEAM_ID) AS "Team",
+            e.OPTA_PLAYER_ID AS "PlayerId",
+            COALESCE(NULLIF(r.PLAYER_NAME, ''), e.OPTA_PLAYER_ID) AS "Player",
+            e.EVENT_MINUTE AS "Minute",
+            e.EVENT_SECOND AS "Second"
+        FROM {relation("opta_events_staging")} e
+        JOIN {relation("opta_fixtures_raw")} f ON f.FIXTURE_ID = e.FIXTURE_ID
+        LEFT JOIN {relation("opta_teams_staging")} t
+          ON t.FIXTURE_ID = e.FIXTURE_ID AND t.OPTA_TEAM_ID = e.OPTA_TEAM_ID
+        LEFT JOIN {relation("opta_rosters_staging")} r
+          ON r.FIXTURE_ID = e.FIXTURE_ID AND r.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
+        WHERE {' AND '.join(clauses)}
+        ORDER BY e.FIXTURE_ID, e.EVENT_MINUTE, e.EVENT_SECOND
+        """,
+        params=_snowflake_params(params),
+        ttl="30m",
+    )
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+    rows["Date"] = pd.to_datetime(rows["Date"], errors="coerce")
+    for col in ["Minute", "Second"]:
+        rows[col] = pd.to_numeric(rows[col], errors="coerce")
+    return rows[columns]
+
+
+def load_opta_substitutions(season: str | None = None, team: str | None = None) -> pd.DataFrame:
+    """One row per substitution, paired from Opta F24 Player Off/On events.
+
+    Off (TypeId 18) and On (TypeId 19) events are paired by matching team,
+    period, minute and second -- CAFC_DB does not expose a related-event
+    qualifier for substitutions, but this pairing was verified exactly
+    against real fixture data down to the second. Score state and each
+    substitute's goal/assist contribution after entering are reconstructed
+    from the same fixtures' goal (TypeId 16) and assisted-pass events, all
+    within the Opta provider so no cross-provider player matching is needed.
+    """
+    if USE_MOCK_DATA:
+        return pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
+
+    clauses = ["(e.TYPE_ID IN (16, 18, 19) OR (e.TYPE_ID = 1 AND e.IS_ASSIST = 1))"]
+    params: list[object] = []
+    if season:
+        season_key = _season_key(season)
+        start_year = season_key.split("/")[0]
+        if len(start_year) == 2 and start_year.isdigit():
+            start_year = f"20{start_year}"
+        clauses.append("TO_VARCHAR(f.SEASON) = ?")
+        params.append(start_year)
+    if team:
+        clauses.append("(f.HOME_TEAM_NAME = ? OR f.AWAY_TEAM_NAME = ?)")
+        params.extend([team, team])
+
+    raw = get_connection().query(
+        f"""
+        SELECT
+            e.FIXTURE_ID AS "FixtureId",
+            TO_VARCHAR(f.SEASON) AS "Source Season",
+            f.MATCH_DATE AS "Date",
+            f.HOME_TEAM_NAME AS "Home",
+            f.AWAY_TEAM_NAME AS "Away",
+            e.OPTA_TEAM_ID AS "TeamId",
+            COALESCE(NULLIF(t.OFFICIAL_TEAM_NAME, ''), NULLIF(t.TEAM_NAME, ''), e.OPTA_TEAM_ID) AS "Team",
+            e.OPTA_PLAYER_ID AS "PlayerId",
+            COALESCE(NULLIF(r.PLAYER_NAME, ''), e.OPTA_PLAYER_ID) AS "Player",
+            e.TYPE_ID AS "TypeId",
+            e.PERIOD_ID AS "Period",
+            e.EVENT_MINUTE AS "Minute",
+            e.EVENT_SECOND AS "Second",
+            l.POSITION_GROUP AS "Position Group",
+            l.SUB_POSITION AS "Sub Position"
+        FROM {relation("opta_events_staging")} e
+        JOIN {relation("opta_fixtures_raw")} f ON f.FIXTURE_ID = e.FIXTURE_ID
+        LEFT JOIN {relation("opta_teams_staging")} t
+          ON t.FIXTURE_ID = e.FIXTURE_ID AND t.OPTA_TEAM_ID = e.OPTA_TEAM_ID
+        LEFT JOIN {relation("opta_rosters_staging")} r
+          ON r.FIXTURE_ID = e.FIXTURE_ID AND r.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
+        LEFT JOIN {relation("opta_lineups_staging")} l
+          ON l.FIXTURE_ID = e.FIXTURE_ID AND l.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
+        WHERE {' AND '.join(clauses)}
+        ORDER BY e.FIXTURE_ID, e.EVENT_MINUTE, e.EVENT_SECOND
+        """,
+        params=_snowflake_params(params),
+        ttl="30m",
+    )
+    if raw.empty:
+        return pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
+
+    raw["Season"] = _opta_season_labels(raw.pop("Source Season"))
+    raw["Date"] = pd.to_datetime(raw["Date"], errors="coerce")
+    for col in ["TypeId", "Period", "Minute", "Second"]:
+        raw[col] = pd.to_numeric(raw[col], errors="coerce")
+    raw["_Time"] = raw["Minute"].fillna(0) * 60 + raw["Second"].fillna(0)
+    raw["Opponent"] = np.where(raw["Team"].astype(str).eq(raw["Home"].astype(str)), raw["Away"], raw["Home"])
+
+    goals = raw[raw["TypeId"] == OPTA_TYPE_GOAL][["FixtureId", "TeamId", "PlayerId", "_Time"]].copy()
+    assists = raw[(raw["TypeId"] == OPTA_TYPE_PASS)][["FixtureId", "TeamId", "PlayerId", "_Time"]].copy()
+
+    subs_off = raw[raw["TypeId"] == OPTA_TYPE_PLAYER_OFF].copy()
+    subs_on = raw[raw["TypeId"] == OPTA_TYPE_PLAYER_ON].copy()
+    if subs_off.empty or subs_on.empty:
+        return pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
+
+    group_keys = ["FixtureId", "TeamId", "Period", "Minute", "Second"]
+    subs_off["_Rank"] = subs_off.groupby(group_keys).cumcount()
+    subs_on["_Rank"] = subs_on.groupby(group_keys).cumcount()
+    paired = subs_off.merge(
+        subs_on,
+        on=[*group_keys, "_Rank"],
+        suffixes=(" Off", " On"),
+        how="inner",
+    )
+    if paired.empty:
+        return pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
+
+    paired["_Time"] = paired["Minute"].fillna(0) * 60 + paired["Second"].fillna(0)
+    paired = paired.sort_values(["FixtureId", "TeamId", "_Time"]).reset_index(drop=True)
+    paired["Sub Number"] = paired.groupby(["FixtureId", "TeamId"]).cumcount() + 1
+    # A player subbed off who was themselves a substitute earlier (a double-sub
+    # chain) has "Position Group" = "Substitute" in the lineup table; fall back
+    # to their own Sub Position so the shift classification still resolves.
+    paired["Position Off"] = paired["Position Group Off"].where(
+        ~paired["Position Group Off"].astype(str).str.upper().eq("SUBSTITUTE"), paired["Sub Position Off"]
+    )
+    paired["Shift Type"] = [
+        _shift_type(off_pos, on_pos)
+        for off_pos, on_pos in zip(paired["Position Off"], paired["Sub Position On"], strict=False)
+    ]
+
+    rows: list[dict[str, object]] = []
+    for _, sub in paired.iterrows():
+        fixture_id = sub["FixtureId"]
+        team_id = sub["TeamId"]
+        sub_time = sub["_Time"]
+        team_goals = int(
+            goals[(goals["FixtureId"] == fixture_id) & (goals["TeamId"] == team_id) & (goals["_Time"] <= sub_time)].shape[0]
+        )
+        opponent_goals = int(
+            goals[(goals["FixtureId"] == fixture_id) & (goals["TeamId"] != team_id) & (goals["_Time"] <= sub_time)].shape[0]
+        )
+        goals_after = int(
+            goals[
+                (goals["FixtureId"] == fixture_id)
+                & (goals["PlayerId"] == sub["PlayerId On"])
+                & (goals["_Time"] > sub_time)
+            ].shape[0]
+        )
+        assists_after = int(
+            assists[
+                (assists["FixtureId"] == fixture_id)
+                & (assists["PlayerId"] == sub["PlayerId On"])
+                & (assists["_Time"] > sub_time)
+            ].shape[0]
+        )
+        rows.append(
+            {
+                "FixtureId": fixture_id,
+                "Season": sub["Season Off"],
+                "Date": sub["Date Off"],
+                "TeamId": team_id,
+                "Team": sub["Team Off"],
+                "Opponent": sub["Opponent Off"],
+                "Period": sub["Period"],
+                "Minute": sub["Minute"],
+                "Second": sub["Second"],
+                "Sub Number": int(sub["Sub Number"]),
+                "PlayerOffId": sub["PlayerId Off"],
+                "Player Off": sub["Player Off"],
+                "Position Off": sub["Position Off"],
+                "PlayerOnId": sub["PlayerId On"],
+                "Player On": sub["Player On"],
+                "Position On": sub["Sub Position On"],
+                "Shift Type": sub["Shift Type"],
+                "Team Goals At Sub": team_goals,
+                "Opponent Goals At Sub": opponent_goals,
+                "Score State": _score_state(team_goals, opponent_goals),
+                "Goals After Entry": goals_after,
+                "Assists After Entry": assists_after,
+            }
+        )
+    result = pd.DataFrame(rows)
+    return result[SUBSTITUTION_COLUMNS] if not result.empty else pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
 
 
 def _opta_xml_id(value: object) -> str | None:

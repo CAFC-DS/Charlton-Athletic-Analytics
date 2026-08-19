@@ -106,7 +106,7 @@ pa.section_heading("Percentile comparison")
 _comparison_key()
 st.plotly_chart(
     pa.comparison_chart(players, selected_indices),
-    use_container_width=True,
+    width="stretch",
     config={"displayModeBar": False, "responsive": True},
     key=f"player_percentile_comparison_{'_'.join(str(idx) for idx in selected_indices)}",
 )

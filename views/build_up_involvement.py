@@ -13,11 +13,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import charting, data, pitch, ui
+from utils import charting, data, ui
 from utils import match_analysis as ma
+from utils import possession_analysis as poss
 
 
-BUILD_UP_START_X = pitch.FINAL_THIRD_X  # sequences starting beyond this are already in the final third
 RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
@@ -72,12 +72,6 @@ def _summary_card(label: str, value: object) -> None:
     )
 
 
-def _numeric(frame: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
-    if col not in frame:
-        return pd.Series(default, index=frame.index, dtype="float64")
-    return pd.to_numeric(frame[col], errors="coerce").fillna(default)
-
-
 def _team_options(matches: pd.DataFrame) -> list[str]:
     values = pd.concat([matches.get("Home", pd.Series(dtype=str)), matches.get("Away", pd.Series(dtype=str))])
     return sorted(values.dropna().astype(str).loc[lambda s: s.str.strip().ne("")].unique().tolist())
@@ -96,67 +90,6 @@ def _team_fixture_rows(matches: pd.DataFrame, team_name: str) -> pd.DataFrame:
     rows["Venue"] = np.where(rows["Home"].astype(str).eq(str(team_name)), "Home", "Away")
     rows["Opponent"] = np.where(rows["Home"].astype(str).eq(str(team_name)), rows["Away"].astype(str), rows["Home"].astype(str))
     return rows.sort_values(["Date", "MatchId"]).reset_index(drop=True)
-
-
-def _sequence_keys(events: pd.DataFrame) -> pd.DataFrame:
-    """One row per (MatchId, Sequence Index) with ordering, start location and phase of the first event."""
-    working = events.dropna(subset=["MatchId", "Sequence Index"]).copy()
-    if working.empty:
-        return pd.DataFrame(columns=["MatchId", "Sequence Index", "_Order"])
-    working["_Order"] = _numeric(working, "Event Number")
-    first = (
-        working.sort_values("_Order")
-        .groupby(["MatchId", "Sequence Index"], as_index=False)
-        .first()
-    )
-    return first
-
-
-def _buildup_sequence_keys(events: pd.DataFrame) -> pd.DataFrame:
-    """Sequences whose first event is an in-possession action starting outside the final third."""
-    first = _sequence_keys(events)
-    if first.empty:
-        return first
-    first["Start X"] = _numeric(first, "Start X", np.nan)
-    starts_deep = pd.to_numeric(first["Start X"], errors="coerce").lt(BUILD_UP_START_X)
-    in_possession = first["Phase"].fillna("").astype(str).eq("IN_POSSESSION")
-    return first[starts_deep & in_possession].copy()
-
-
-def _sequence_outcomes(events: pd.DataFrame, buildup_keys: pd.DataFrame) -> pd.DataFrame:
-    if buildup_keys.empty:
-        return pd.DataFrame(columns=["Stage", "Sequences", "Conversion %"])
-    keys = buildup_keys[["MatchId", "Sequence Index"]].drop_duplicates()
-    working = events.dropna(subset=["MatchId", "Sequence Index"]).merge(keys, on=["MatchId", "Sequence Index"], how="inner")
-    action_type = working["Action Type"].fillna("").astype(str).str.upper()
-    action = working["Action"].fillna("").astype(str).str.upper()
-    start_x = _numeric(working, "Start X", np.nan)
-    end_x = _numeric(working, "End X", np.nan)
-    working["_Reached Final Third"] = start_x.ge(BUILD_UP_START_X) | end_x.ge(BUILD_UP_START_X)
-    working["_Shot"] = action_type.eq("SHOT")
-    working["_Goal"] = action.eq("GOAL")
-    working["_Shot xG"] = _numeric(working, "Shot xG").where(working["_Shot"], 0)
-    per_sequence = working.groupby(["MatchId", "Sequence Index"], as_index=False).agg(
-        **{
-            "Reached Final Third": ("_Reached Final Third", "max"),
-            "Shot": ("_Shot", "max"),
-            "Goal": ("_Goal", "max"),
-            "Shot xG": ("_Shot xG", "sum"),
-        }
-    )
-    per_sequence["Reached Final Third"] = per_sequence[["Reached Final Third", "Shot"]].max(axis=1)
-    per_sequence["Shot"] = per_sequence[["Shot", "Goal"]].max(axis=1)
-    total = len(per_sequence)
-    stages = ["Build-Up Sequences", "Reached Final Third", "Produced a Shot", "Produced a Goal"]
-    counts = [
-        total,
-        int(per_sequence["Reached Final Third"].sum()),
-        int(per_sequence["Shot"].sum()),
-        int(per_sequence["Goal"].sum()),
-    ]
-    summary = pd.DataFrame({"Stage": stages, "Sequences": counts})
-    summary["Conversion %"] = summary["Sequences"].div(max(total, 1)).mul(100)
-    return summary
 
 
 def _funnel_chart(summary: pd.DataFrame, title: str) -> go.Figure:
@@ -178,7 +111,7 @@ def _funnel_chart(summary: pd.DataFrame, title: str) -> go.Figure:
 
 
 def _match_buildup_summary(events: pd.DataFrame, fixture_rows: pd.DataFrame) -> pd.DataFrame:
-    buildup_keys = _buildup_sequence_keys(events)
+    buildup_keys = poss.buildup_sequence_keys(events)
     if buildup_keys.empty:
         return pd.DataFrame()
     per_match = buildup_keys.groupby("MatchId", as_index=False).agg(**{"Build-Up Sequences": ("Sequence Index", "size")})
@@ -216,34 +149,6 @@ def _trend_chart(match_summary: pd.DataFrame, title: str) -> go.Figure:
     fig.update_xaxes(title="Match")
     fig.update_yaxes(title="Build-Up Sequences", rangemode="tozero")
     return charting.polish_figure(fig, title, height=460)
-
-
-def _player_involvement(events: pd.DataFrame, buildup_keys: pd.DataFrame, minutes_lookup: pd.DataFrame) -> pd.DataFrame:
-    if buildup_keys.empty:
-        return pd.DataFrame()
-    keys = buildup_keys[["MatchId", "Sequence Index"]].drop_duplicates()
-    working = events.dropna(subset=["MatchId", "Sequence Index"]).merge(keys, on=["MatchId", "Sequence Index"], how="inner")
-    total_sequences = len(keys)
-    if total_sequences == 0:
-        return pd.DataFrame()
-
-    actor = working[["MatchId", "Sequence Index", "PlayerId", "Player"]].dropna(subset=["Player"])
-    receiver = working[["MatchId", "Sequence Index", "ReceiverId", "Receiver"]].dropna(subset=["Receiver"]).rename(
-        columns={"ReceiverId": "PlayerId", "Receiver": "Player"}
-    )
-    touches = pd.concat([actor, receiver], ignore_index=True).drop_duplicates(["MatchId", "Sequence Index", "Player"])
-    touches["Touches"] = 1
-    per_player = touches.groupby(["PlayerId", "Player"], as_index=False).agg(
-        **{"Sequences Touched": ("MatchId", "size")}
-    )
-    per_player["Build-Up Involvement %"] = per_player["Sequences Touched"] / total_sequences * 100
-
-    if not minutes_lookup.empty:
-        lookup = minutes_lookup.copy()
-        lookup["PlayerId"] = lookup["PlayerId"].astype(str)
-        per_player["PlayerId"] = per_player["PlayerId"].astype(str)
-        per_player = per_player.merge(lookup[["PlayerId", "Minutes"]], on="PlayerId", how="left")
-    return per_player.sort_values("Build-Up Involvement %", ascending=False).reset_index(drop=True)
 
 
 def _involvement_chart(players: pd.DataFrame, title: str, top_n: int = 15) -> go.Figure:
@@ -297,7 +202,7 @@ with control_cols[0]:
     if not seasons:
         st.warning("No match seasons are available.")
         st.stop()
-    preferred_season = "25/26" if "25/26" in seasons else seasons[-1]
+    preferred_season = data.preferred_season(seasons)
     season = st.selectbox("Season", seasons, index=seasons.index(preferred_season), key="buildup_season")
 
 matches = ma.load_matches(season)
@@ -343,13 +248,21 @@ if events.empty:
     st.info("No event-level rows are available for the selected fixtures.")
     st.stop()
 
-buildup_keys = _buildup_sequence_keys(events)
+buildup_keys = poss.buildup_sequence_keys(events)
 if buildup_keys.empty:
     st.info("No build-up sequences are available for the selected fixtures.")
     st.stop()
+if len(buildup_keys) < poss.MIN_SEQUENCES_FOR_RANKING:
+    st.warning(
+        f"Only {len(buildup_keys)} build-up sequences are available across {len(venue_fixtures)} match(es) in this "
+        "selection -- the player involvement chart below will look flat or tied, because with this few sequences "
+        "most players who touch the ball at all land on the same 1-in-N share (e.g. 1 of 8 sequences is 12.5% no "
+        "matter who it is). This isn't a bug -- it's genuinely too small a sample yet. Pick a fuller season or Full "
+        "Season window for a meaningful breakdown."
+    )
 
 match_summary = _match_buildup_summary(events, venue_fixtures)
-outcome_summary = _sequence_outcomes(events, buildup_keys)
+outcome_summary = poss.sequence_outcomes(events, buildup_keys)
 
 ma.section_heading("Build-Up Snapshot")
 matches_covered = max(len(venue_fixtures), 1)
@@ -393,7 +306,7 @@ ma.section_heading("Player Build-Up Involvement")
 minutes_lookup = data.load_match_player_minutes(season=season, team=team_name)
 if not minutes_lookup.empty:
     minutes_lookup = minutes_lookup.groupby(["PlayerId"], as_index=False).agg(Minutes=("Minutes", "sum"))
-player_involvement = _player_involvement(events, buildup_keys, minutes_lookup)
+player_involvement = poss.player_involvement(events, buildup_keys, minutes_lookup)
 if player_involvement.empty:
     st.info("No player-level build-up data is available for the selected fixtures.")
 else:

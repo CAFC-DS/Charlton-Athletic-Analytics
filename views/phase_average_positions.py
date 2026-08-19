@@ -299,6 +299,12 @@ def _normalise_opta_events(events: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _opta_id(value: object) -> str:
+    """Strip Opta's XML-style entity prefix (e.g. "t33" -> "33")."""
+    text = "" if value is None else str(value).strip()
+    return text[1:] if len(text) > 1 and text[0].isalpha() else text
+
+
 def _opta_period_label(period: object) -> str:
     try:
         p = int(float(period))
@@ -445,9 +451,22 @@ else:
         .tolist()
     )
 
+    _opta_charlton_mask = (
+        fixtures["Home"].astype(str).str.contains("charlton", case=False, na=False)
+        | fixtures["Away"].astype(str).str.contains("charlton", case=False, na=False)
+    )
+
+    def _opta_charlton_match_count(season_value: str) -> int:
+        return int((_opta_charlton_mask & fixtures["Season"].astype(str).eq(str(season_value))).sum())
+
     opta_controls = st.columns([0.7, 0.7, 0.9])
     with opta_controls[0]:
-        opta_season = st.selectbox("Season", season_options, index=len(season_options) - 1, key="pap_opta_season")
+        preferred_opta_season = data.preferred_season(season_options, match_count=_opta_charlton_match_count)
+        opta_season = st.selectbox(
+            "Season", season_options,
+            index=season_options.index(preferred_opta_season),
+            key="pap_opta_season",
+        )
     with opta_controls[1]:
         charlton_idx = next(
             (i + 1 for i, t in enumerate(team_options) if "charlton" in t.casefold()), 0
@@ -486,24 +505,38 @@ else:
     selected_fixture = filtered_fixtures.loc[selected_fixture_idx]
     fixture_id = selected_fixture["FixtureId"]
 
+    # Load Opta events first so team names can be resolved consistently.
+    events = data.load_opta_events(fixture_id, limit=50000)
+    if events.empty:
+        st.info("No Opta F24 events are available for this fixture.")
+        st.stop()
+    events = _normalise_opta_events(events)
+
+    # load_opta_fixtures() sources team names from the raw DVMS fixtures table
+    # (e.g. "Charlton Athletic"), while load_opta_events()/load_opta_lineups()
+    # source them from the F7 teams table (e.g. "Charlton Athletic FC") -- the
+    # same club, different strings. TeamId is consistent across both once the
+    # "t" entity prefix used in the fixtures table is stripped, so resolve the
+    # display name via the events table before using it for any Team-string
+    # filtering (a naive fixtures-table name here always fails to match and
+    # silently empties every downstream filter).
+    home_id = _opta_id(selected_fixture.get("Home Team Id"))
+    away_id = _opta_id(selected_fixture.get("Away Team Id"))
+    id_to_name = (
+        events[["TeamId", "Team"]].dropna().drop_duplicates().assign(TeamId=lambda d: d["TeamId"].astype(str))
+        .set_index("TeamId")["Team"].to_dict()
+        if "TeamId" in events else {}
+    )
+    resolved_home = id_to_name.get(home_id, str(selected_fixture.get("Home", "")))
+    resolved_away = id_to_name.get(away_id, str(selected_fixture.get("Away", "")))
+
     # Pick a team from the fixture
-    opta_teams_in_fixture = []
-    for side in ["Home", "Away"]:
-        val = selected_fixture.get(side)
-        if pd.notna(val):
-            opta_teams_in_fixture.append(str(val))
+    opta_teams_in_fixture = [name for name in [resolved_home, resolved_away] if name and name.lower() != "nan"]
     if not opta_teams_in_fixture:
         st.warning("The selected fixture has no team names.")
         st.stop()
     team_name = st.selectbox("Team", opta_teams_in_fixture, key="pap_opta_team")
 
-    # Load Opta events and lineups
-    events = data.load_opta_events(fixture_id, limit=50000)
-    if events.empty:
-        st.info("No Opta F24 events are available for this fixture.")
-        st.stop()
-
-    events = _normalise_opta_events(events)
     team_events = events[events["Team"].astype(str) == str(team_name)].copy() if "Team" in events else events.copy()
     if team_events.empty:
         st.info("No Opta event rows are available for the selected team.")
@@ -550,8 +583,7 @@ else:
     team_formation = None
     if not formations.empty:
         # Determine which side the selected team is on
-        home_team = str(selected_fixture.get("Home", ""))
-        side = "Home" if home_team == team_name else "Away"
+        side = "Home" if resolved_home == team_name else "Away"
         formation_row = formations[formations["Side"].astype(str).str.upper() == side.upper()]
         if not formation_row.empty:
             team_formation = str(formation_row.iloc[0].get("Formation", ""))

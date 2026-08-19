@@ -310,6 +310,94 @@ def _pass_flow_map(passes: pd.DataFrame, title: str, max_passes: int) -> go.Figu
     return fig
 
 
+CROSS_TYPE_ORDER = ["Low Cross", "High Cross"]
+
+
+def _cross_type_label(action: object) -> str:
+    text = str(action).upper()
+    if text == "HIGH_CROSS":
+        return "High Cross"
+    if text == "LOW_CROSS":
+        return "Low Cross"
+    return str(action).replace("_", " ").title()
+
+
+def _crossing_summary(passes: pd.DataFrame) -> dict[str, float | int]:
+    crosses = passes[data.is_cross(passes)].copy() if not passes.empty else passes
+    attempts = len(crosses)
+    completed = int(crosses["_Completed"].sum()) if "_Completed" in crosses and attempts else 0
+    return {
+        "Attempts": attempts,
+        "Completed": completed,
+        "Completion %": _pct(completed, attempts),
+        "Low Crosses": int(crosses["Action"].astype(str).str.upper().eq("LOW_CROSS").sum()) if attempts else 0,
+        "High Crosses": int(crosses["Action"].astype(str).str.upper().eq("HIGH_CROSS").sum()) if attempts else 0,
+        "PXT Pass": _sum(crosses, "PXT Pass"),
+    }
+
+
+def _crossing_by_player_table(passes: pd.DataFrame) -> pd.DataFrame:
+    columns = ["Player", "Attempts", "Completed", "Completion %", "Low", "High", "PXT Pass"]
+    crosses = passes[data.is_cross(passes)].copy() if not passes.empty else passes
+    if crosses.empty or "Player" not in crosses:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    for player, group in crosses.groupby("Player"):
+        attempts = len(group)
+        completed = int(group["_Completed"].sum())
+        rows.append(
+            {
+                "Player": player,
+                "Attempts": attempts,
+                "Completed": completed,
+                "Completion %": round(_pct(completed, attempts), 1),
+                "Low": int(group["Action"].astype(str).str.upper().eq("LOW_CROSS").sum()),
+                "High": int(group["Action"].astype(str).str.upper().eq("HIGH_CROSS").sum()),
+                "PXT Pass": round(_sum(group, "PXT Pass"), 3),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns).sort_values(["Attempts", "Completed"], ascending=False).reset_index(drop=True)
+
+
+def _crossing_type_chart(passes: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+    crosses = passes[data.is_cross(passes)].copy() if not passes.empty else passes
+    if crosses.empty:
+        fig.add_annotation(
+            text="No Crosses Match the Selected Filters",
+            x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False,
+            font=dict(color=ui.CHARLTON_MUTED),
+        )
+        return charting.polish_figure(fig, title, height=380)
+
+    crosses["Cross Type"] = crosses["Action"].map(_cross_type_label)
+    counts = crosses.groupby(["Cross Type", "Outcome"], as_index=False).size()
+    for outcome in OUTCOME_ORDER:
+        values = []
+        for cross_type in CROSS_TYPE_ORDER:
+            match = counts[(counts["Cross Type"] == cross_type) & (counts["Outcome"] == outcome)]
+            values.append(int(match["size"].iloc[0]) if not match.empty else 0)
+        if any(values):
+            fig.add_trace(
+                go.Bar(
+                    x=CROSS_TYPE_ORDER,
+                    y=values,
+                    name=outcome,
+                    marker_color=OUTCOME_COLORS.get(outcome, "#7a7f87"),
+                    text=[charting.metric_text(value, "Actions") for value in values],
+                    textposition="outside",
+                    cliponaxis=False,
+                    hovertemplate=f"{outcome}<br>%{{x}}: %{{y:.0f}} crosses<extra></extra>",
+                )
+            )
+    fig.update_layout(barmode="group", height=380, xaxis_title="Cross Type", yaxis_title="Crosses", bargap=0.3)
+    fig.update_yaxes(tickformat=".0f")
+    fig = charting.polish_figure(fig, title)
+    fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0), margin=dict(l=28, r=34, t=72, b=96))
+    return fig
+
+
 def _receiver_summary(passes: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "Receiver",
@@ -697,7 +785,7 @@ summary_cols_2[1].metric("Total PXT Pass", charting.metric_text(summary["PXT Pas
 summary_cols_2[2].metric("Avg Territory Gain", charting.metric_text(summary["Avg Territory Gain"], "Metres"))
 summary_cols_2[3].metric("Mapped Team Passes", charting.metric_text(len(filtered_passes), "Actions"))
 
-tabs = st.tabs(["Pass Map", "Accuracy & Direction", "Network", "Matrices", "Event Table"])
+tabs = st.tabs(["Pass Map", "Accuracy & Direction", "Crosses", "Network", "Matrices", "Event Table"])
 
 with tabs[0]:
     pa.section_heading("Player Pass Flow Map")
@@ -727,6 +815,48 @@ with tabs[1]:
         st.dataframe(receiver_table, width="stretch", hide_index=True)
 
 with tabs[2]:
+    pa.section_heading(f"{team_name} Crossing Profile")
+    team_cross_summary = _crossing_summary(filtered_passes)
+    cross_cols = st.columns(4)
+    cross_cols[0].metric("Crosses Attempted", charting.metric_text(team_cross_summary["Attempts"], "Actions"))
+    cross_cols[1].metric("Completion", f"{team_cross_summary['Completion %']:.1f}%")
+    cross_cols[2].metric("Low / High Split", f"{team_cross_summary['Low Crosses']} / {team_cross_summary['High Crosses']}")
+    cross_cols[3].metric("Total PXT From Crosses", charting.metric_text(team_cross_summary["PXT Pass"], "PXT Pass"))
+
+    map_col, chart_col = st.columns([1.15, 1])
+    with map_col:
+        team_crosses = filtered_passes[data.is_cross(filtered_passes)].copy()
+        st.plotly_chart(
+            pitch.pass_map(team_crosses, team_name, f"{team_name}: Cross Delivery Map", max_passes=300),
+            width="stretch",
+        )
+    with chart_col:
+        st.plotly_chart(_crossing_type_chart(filtered_passes, f"{team_name}: Cross Type and Outcome"), width="stretch")
+
+    pa.section_heading("Crossing by Player")
+    cross_table = _crossing_by_player_table(filtered_passes)
+    if cross_table.empty:
+        st.caption("No crosses match the current filters for this fixture.")
+    else:
+        st.dataframe(cross_table, width="stretch", hide_index=True)
+
+    pa.section_heading(f"{match_player}: Crossing Detail")
+    player_cross_summary = _crossing_summary(player_passes)
+    if player_cross_summary["Attempts"] == 0:
+        st.caption(f"{match_player} did not attempt a cross in this selected fixture (within the current filters).")
+    else:
+        detail_cols = st.columns(3)
+        detail_cols[0].metric("Attempted", charting.metric_text(player_cross_summary["Attempts"], "Actions"))
+        detail_cols[1].metric("Completed", charting.metric_text(player_cross_summary["Completed"], "Actions"))
+        detail_cols[2].metric("PXT From Crosses", charting.metric_text(player_cross_summary["PXT Pass"], "PXT Pass"))
+        player_crosses = player_passes[data.is_cross(player_passes)].copy()
+        cross_event_cols = ma.available_columns(
+            player_crosses,
+            ["Minute", "Receiver", "Action", "Outcome", "Pass Distance", "PXT Pass", "Start X", "Start Y", "End X", "End Y"],
+        )
+        st.dataframe(player_crosses[cross_event_cols].sort_values("Minute"), width="stretch", hide_index=True)
+
+with tabs[3]:
     pa.section_heading("Selected Player Passing Network")
     network = pass_network_rows[
         (pass_network_rows["Player"].astype(str) == str(match_player))
@@ -767,7 +897,7 @@ with tabs[2]:
             hide_index=True,
         )
 
-with tabs[3]:
+with tabs[4]:
     pa.section_heading("Passing Matrices")
     completed_team_passes = filtered_passes[filtered_passes["Outcome"] == "Complete"].copy()
     matrix_size = st.slider("Players in Receiver Matrix", 6, 18, 12)
@@ -790,7 +920,7 @@ with tabs[3]:
             width="stretch",
         )
 
-with tabs[4]:
+with tabs[5]:
     pa.section_heading("Mapped Pass Event Table")
     event_cols = ma.available_columns(
         player_passes,

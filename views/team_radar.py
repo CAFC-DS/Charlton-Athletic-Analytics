@@ -177,7 +177,7 @@ with tab_comp:
                 colors=[d["color"] for d in radar_data],
                 height=650
             )
-            st.plotly_chart(fig, use_container_width=True, key="team_radar_plot")
+            st.plotly_chart(fig, width="stretch", key="team_radar_plot")
 
         with c2:
             st.markdown("##### Performance Breakdown")
@@ -206,9 +206,9 @@ with tab_comp:
                         "Value": st.column_config.NumberColumn("Value", format="%.2f")
                     },
                     hide_index=True,
-                    use_container_width=True
+                    width="stretch"
                 )
-                
+
                 # Summary Cards
                 avg_pct = df_summary["Percentile"].mean()
                 st.metric("Overall Style Score", f"{avg_pct:.1f}/100")
@@ -229,9 +229,9 @@ with tab_comp:
                     comp_rows.append(row)
                 
                 st.dataframe(
-                    pd.DataFrame(comp_rows), 
-                    hide_index=True, 
-                    use_container_width=True
+                    pd.DataFrame(comp_rows),
+                    hide_index=True,
+                    width="stretch"
                 )
                 
                 st.info("Percentiles in brackets show relative standing in the league (higher is better).")
@@ -250,7 +250,7 @@ with tab_comp:
                         "Value": team_data["raw_values"][i],
                         "Percentile": team_data["values"][i]
                     })
-            st.dataframe(pd.DataFrame(export_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(export_rows), width="stretch", hide_index=True)
 
 with tab_builder:
     st.header("Custom Radar Builder")
@@ -285,16 +285,24 @@ with tab_builder:
                 colors=[team_data["color"]],
                 height=600
             )
-            st.plotly_chart(fig_custom, use_container_width=True, key="custom_radar_builder_plot")
+            st.plotly_chart(fig_custom, width="stretch", key="custom_radar_builder_plot")
             
         with b2:
             st.markdown("### Metric Definitions & Values")
             for i, m in enumerate(selected_metrics):
                 meta = ta.TEAM_METRIC_META[m]
-                with st.expander(f"**{meta[2]}**: {team_data['raw_values'][i]:.2f} ({team_data['values'][i]:.0f}th)"):
+                raw_value = team_data["raw_values"][i]
+                percentile_value = team_data["values"][i]
+                has_value = pd.notna(raw_value) and pd.notna(percentile_value)
+                raw_text = f"{raw_value:.2f}" if pd.notna(raw_value) else "N/A"
+                percentile_text = f"{percentile_value:.0f}th" if pd.notna(percentile_value) else "N/A"
+                with st.expander(f"**{meta[2]}**: {raw_text} ({percentile_text})"):
                     st.write(f"**Category:** {meta[0]}")
                     st.write(f"**Raw Metric:** `{m}`")
-                    st.progress(team_data['values'][i] / 100)
+                    if has_value:
+                        st.progress(percentile_value / 100)
+                    else:
+                        st.caption("No value available for this team/metric combination.")
                     st.caption(f"Ranked against {len(teams)} teams in the {season} season.")
 
 st.caption(

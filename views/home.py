@@ -29,7 +29,7 @@ def _load_home_data() -> tuple[dict[str, list[str]], pd.DataFrame, pd.DataFrame]
     try:
         seasons = data.list_seasons()
         player_seasons = seasons.get("players", [])
-        default_season = player_seasons[-1] if player_seasons else None
+        default_season = data.preferred_season(player_seasons)
         season = st.session_state.get("home_season", default_season)
         players = data.load_players(season=season).copy()
         teams = data.load_teams(season=season).copy()
@@ -49,12 +49,13 @@ players["_Position Display"] = players["Position"].apply(ui.clean_position) if "
 team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
 position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
 season_options = seasons.get("players", [])
+preferred_home_season = data.preferred_season(season_options)
 
 try:
     summary = data.dataset_summary()
 except Exception:
     summary = {
-        "season": season_options[-1] if season_options else "Available",
+        "season": preferred_home_season if preferred_home_season else "Available",
         "last_refreshed": "Snowflake cache",
         "n_players": len(players),
         "n_teams": len(teams),
@@ -96,7 +97,7 @@ st.markdown(
 
 st.markdown('<div class="ss-section-label">Platform overview</div>', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Season", summary.get("season", season_options[-1] if season_options else "Available"))
+c1.metric("Season", summary.get("season", preferred_home_season if preferred_home_season else "Available"))
 c2.metric("Players", summary.get("n_players", len(players)))
 c3.metric("Teams", summary.get("n_teams", len(teams)))
 c4.metric("Data refreshed", summary.get("last_refreshed", "Snowflake cache"))
@@ -110,14 +111,18 @@ with filter_col:
 
     s1, s2, s3 = st.columns(3)
     if season_options:
-        selected_season = s1.selectbox("Season", season_options, index=len(season_options) - 1, key="home_season")
+        selected_season = s1.selectbox(
+            "Season", season_options,
+            index=season_options.index(preferred_home_season) if preferred_home_season in season_options else len(season_options) - 1,
+            key="home_season",
+        )
     else:
         selected_season = None
         s1.caption("No season selector available")
     selected_team = s2.selectbox("Team", ["All teams"] + team_options)
     selected_position = s3.selectbox("Position", ["All positions"] + position_options)
 
-    if selected_season and selected_season != (season_options[-1] if season_options else None):
+    if selected_season and selected_season != preferred_home_season:
         players = data.load_players(season=selected_season).copy()
         players["_Position Display"] = players["Position"].apply(ui.clean_position) if "Position" in players else "Unknown position"
 

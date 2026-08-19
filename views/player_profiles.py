@@ -280,9 +280,9 @@ players = pa.add_position_groups(players)
 preferred = _selected_from_state()
 
 
-def _selector_label(idx: int) -> str:
+def _selector_label(idx: int, sort_mode: str) -> str:
     player = players.loc[idx]
-    if st.session_state.get("player_profile_sort") == "Club A-Z":
+    if sort_mode == "Club A-Z":
         return f"{player.get('Team', 'Unknown')} | {player.get('Player', 'Unknown')} | {player.get('_Position Display', 'Unknown')}"
     return f"{player.get('Player', 'Unknown')} | {player.get('Team', 'Unknown')} | {player.get('_Position Display', 'Unknown')}"
 
@@ -301,7 +301,9 @@ if preferred:
     found = players.index[players["Player"].astype(str) == preferred].tolist()
     if found and found[0] in options:
         default_index = options.index(found[0])
-selected_index = selector_cols[0].selectbox("Player", options, index=default_index, format_func=_selector_label)
+selected_index = selector_cols[0].selectbox(
+    "Player", options, index=default_index, format_func=lambda idx: _selector_label(idx, sort_mode)
+)
 selected_player = str(players.loc[selected_index, "Player"])
 st.session_state["selected_player"] = selected_player
 min_minutes = selector_cols[2].number_input("Minimum minutes", min_value=0, value=0, step=250)
@@ -324,7 +326,7 @@ with chart_col:
     if radar_fig.data:
         st.plotly_chart(
             radar_fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False, "responsive": True},
             key=f"profile_radar_{selected_index}_{pa.safe_key(selected_player)}_{pa.safe_key(context['role'])}",
         )
@@ -361,7 +363,7 @@ pa.section_heading("Similar players")
 similar_pool = context["peers"].copy()
 if selected_index not in similar_pool.index:
     similar_pool = filtered_players.copy()
-similar_metrics = metric_rows["Metric"].dropna().astype(str).tolist()
+similar_metrics = metric_rows["Metric"].dropna().astype(str).tolist() if "Metric" in metric_rows.columns else []
 similar = pa.similarity_table(similar_pool, selected_player, top_n=8, metrics=similar_metrics)
 if similar.empty:
     st.info("At least two players and one metric are needed to calculate similar players.")

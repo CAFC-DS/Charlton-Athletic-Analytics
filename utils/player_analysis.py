@@ -367,7 +367,8 @@ def select_season(key: str | None = None) -> str | None:
     if not seasons:
         st.caption("No player season selector is available from the data source.")
         return None
-    return st.selectbox("Season", seasons, index=len(seasons) - 1, key=key)
+    default = data.preferred_season(seasons)
+    return st.selectbox("Season", seasons, index=seasons.index(default), key=key)
 
 
 def load_player_data(season: str | None = None) -> pd.DataFrame:
@@ -592,6 +593,19 @@ def _performance_colour(percentile_value: object) -> str:
     return PERFORMANCE_GREEN if _performance_band(percentile_value) == "Better than peer median" else PERFORMANCE_RED
 
 
+PROFILE_METRIC_ROW_COLUMNS = [
+    "Category",
+    "Metric",
+    "Radar Label",
+    "Value",
+    "Display Value",
+    "Role Percentile",
+    "Overall Percentile",
+    "Role Rank",
+    "Higher Is Better",
+]
+
+
 def player_profile_context(players: pd.DataFrame, player_name: str) -> dict[str, object]:
     players = add_position_groups(players)
     row = player_row(players, player_name)
@@ -620,7 +634,7 @@ def player_profile_context(players: pd.DataFrame, player_name: str) -> dict[str,
                 "Higher Is Better": higher_is_better,
             }
         )
-    metric_rows = pd.DataFrame(rows)
+    metric_rows = pd.DataFrame(rows, columns=PROFILE_METRIC_ROW_COLUMNS)
     score = metric_rows["Role Percentile"].dropna().mean() if not metric_rows.empty else np.nan
     return {
         "row": row,

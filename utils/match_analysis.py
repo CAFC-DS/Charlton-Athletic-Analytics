@@ -244,7 +244,8 @@ def select_match_season(key: str | None = None) -> str | None:
     if not seasons:
         st.caption("No match season selector is available from the data source.")
         return None
-    return st.selectbox("Match season", seasons, index=len(seasons) - 1, key=key)
+    default = data.preferred_season(seasons)
+    return st.selectbox("Match season", seasons, index=seasons.index(default), key=key)
 
 
 def select_player_season(key: str | None = None) -> str | None:
@@ -252,7 +253,8 @@ def select_player_season(key: str | None = None) -> str | None:
     if not seasons:
         st.caption("No player metric season selector is available from the data source.")
         return None
-    return st.selectbox("Player metric season", seasons, index=len(seasons) - 1, key=key)
+    default = data.preferred_season(seasons)
+    return st.selectbox("Player metric season", seasons, index=seasons.index(default), key=key)
 
 
 def load_matches(season: str | None = None) -> pd.DataFrame:

@@ -3,9 +3,6 @@
 # =============================================================================
 from __future__ import annotations
 
-import base64
-from functools import lru_cache
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -20,12 +17,8 @@ SHOOTING_BASIS = (
     "SHOT_XG, POSTSHOT_XG, shot distance, angle, body part and target coordinates where available."
 )
 
-GOAL_HALF_WIDTH = 3.66
-GOAL_HEIGHT = 2.44
-GOALMOUTH_SIDE_PADDING = 2.0
-GOALMOUTH_TOP_PADDING = 1.35
-GOALMOUTH_BOTTOM_PADDING = 0.12
-GOALMOUTH_TEMPLATE_PATH = ui.ASSETS_DIR / "goalmouth_template.png"
+GOAL_HALF_WIDTH = pitch.GOAL_HALF_WIDTH
+GOAL_HEIGHT = pitch.GOAL_HEIGHT
 
 OUTCOME_ORDER = ["Goal", "On Target / Saved", "Blocked", "Woodwork", "Off Target", "Other Shot"]
 OUTCOME_COLORS = {
@@ -1025,163 +1018,6 @@ def _shot_distance_zone_pitch_key(title: str = "Shot Distance Zone Key") -> go.F
     return fig
 
 
-@lru_cache(maxsize=1)
-def _goalmouth_template_uri() -> str:
-    if not GOALMOUTH_TEMPLATE_PATH.exists():
-        return ""
-    encoded = base64.b64encode(GOALMOUTH_TEMPLATE_PATH.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
-
-
-def _quality_matrix(shots: pd.DataFrame, title: str) -> go.Figure:
-    if shots.empty:
-        return charting.polish_figure(go.Figure(), title, height=460)
-    x_order = ["Low xG", "Medium xG", "High xG", "Very High xG"]
-    y_order = ["Inside 11m", "11-18m", "18-25m", "25m+", "Unknown"]
-    matrix = shots.pivot_table(index="Distance Band", columns="xG Band", values="Player", aggfunc="size", fill_value=0)
-    matrix = matrix.reindex(index=[item for item in y_order if item in matrix.index], columns=[item for item in x_order if item in matrix.columns], fill_value=0)
-    fig = go.Figure()
-    if matrix.empty:
-        fig.add_annotation(text="No Quality Matrix", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
-        return charting.polish_figure(fig, title, height=460)
-    max_value = float(matrix.to_numpy().max()) if not matrix.empty else 0.0
-    fig.add_trace(
-        go.Heatmap(
-            z=matrix.to_numpy(),
-            x=matrix.columns.tolist(),
-            y=matrix.index.tolist(),
-            colorscale=[
-                [0.0, "#f2f4f7"],
-                [0.0001, "#dc2626"],
-                [0.45, "#f59e0b"],
-                [1.0, "#15803d"],
-            ],
-            zmin=0,
-            zmax=max(max_value, 1.0),
-            xgap=1,
-            ygap=1,
-            colorbar=dict(title="<b>Shots<br>Low → High</b>"),
-            hovertemplate="Distance: %{y}<br>Chance Quality: %{x}<br>Shots: %{z:.0f}<extra></extra>",
-        )
-    )
-    for row_label in matrix.index.tolist():
-        for col_label in matrix.columns.tolist():
-            value = float(matrix.loc[row_label, col_label])
-            if value <= 0:
-                continue
-            fig.add_annotation(
-                x=col_label,
-                y=row_label,
-                text=f"<b>{value:.0f}</b>",
-                showarrow=False,
-                font=dict(size=12, color="#ffffff" if max_value and value >= max_value * 0.55 else ui.CHARLTON_BLACK),
-            )
-    fig.update_layout(height=460, xaxis_title="<b>Shot Quality</b>", yaxis_title="<b>Shot Distance</b>")
-    fig.update_xaxes(tickfont=dict(size=11, color=ui.CHARLTON_BLACK))
-    fig.update_yaxes(tickfont=dict(size=11, color=ui.CHARLTON_BLACK))
-    return charting.polish_figure(fig, title)
-
-
-def _goalmouth_map(shots: pd.DataFrame, title: str, scale_shots: pd.DataFrame | None = None, height: int = 680) -> go.Figure:
-    target_cols = {"Shot Target Y", "Shot Target Z"}
-    fig = go.Figure()
-    if shots.empty or not target_cols.issubset(shots.columns):
-        fig.add_annotation(text="No Shot Target Coordinates", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
-        return charting.polish_figure(fig, title, height=height)
-
-    target = shots.dropna(subset=["Shot Target Y", "Shot Target Z"]).copy()
-    if target.empty:
-        fig.add_annotation(text="No Shot Target Coordinates", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
-        return charting.polish_figure(fig, title, height=height)
-
-    target["_Goalmouth X"] = -pd.to_numeric(target["Shot Target Y"], errors="coerce")
-    target["_Goalmouth Z"] = pd.to_numeric(target["Shot Target Z"], errors="coerce")
-    target = target.dropna(subset=["_Goalmouth X", "_Goalmouth Z"]).copy()
-    if target.empty:
-        fig.add_annotation(text="No Shot Target Coordinates", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
-        return charting.polish_figure(fig, title, height=height)
-
-    _ = scale_shots
-    x_min = -(GOAL_HALF_WIDTH + GOALMOUTH_SIDE_PADDING)
-    x_max = GOAL_HALF_WIDTH + GOALMOUTH_SIDE_PADDING
-    y_min = -GOALMOUTH_BOTTOM_PADDING
-    y_max = GOAL_HEIGHT + GOALMOUTH_TOP_PADDING
-    template_uri = _goalmouth_template_uri()
-    if template_uri:
-        fig.add_layout_image(
-            dict(
-                source=template_uri,
-                xref="x",
-                yref="y",
-                x=-GOAL_HALF_WIDTH,
-                y=GOAL_HEIGHT,
-                sizex=GOAL_HALF_WIDTH * 2,
-                sizey=GOAL_HEIGHT,
-                sizing="stretch",
-                opacity=1.0,
-                layer="below",
-            )
-        )
-    else:
-        fig.add_shape(
-            type="rect",
-            x0=-GOAL_HALF_WIDTH,
-            x1=GOAL_HALF_WIDTH,
-            y0=0,
-            y1=GOAL_HEIGHT,
-            line=dict(color=ui.CHARLTON_BLACK, width=6),
-            fillcolor="rgba(255,255,255,0.92)",
-            layer="below",
-        )
-
-    fig.add_shape(type="line", x0=0, x1=0, y0=0, y1=GOAL_HEIGHT, line=dict(color="rgba(255,255,255,0.34)", width=1.3, dash="dot"))
-    fig.add_shape(type="line", x0=-GOAL_HALF_WIDTH, x1=GOAL_HALF_WIDTH, y0=GOAL_HEIGHT / 2, y1=GOAL_HEIGHT / 2, line=dict(color="rgba(255,255,255,0.26)", width=1.2, dash="dot"))
-    fig.add_shape(type="line", x0=x_min, x1=x_max, y0=GOAL_HEIGHT, y1=GOAL_HEIGHT, line=dict(color="rgba(102,112,133,0.34)", width=1.2, dash="dash"))
-    fig.add_shape(type="line", x0=-GOAL_HALF_WIDTH, x1=-GOAL_HALF_WIDTH, y0=y_min, y1=y_max, line=dict(color="rgba(102,112,133,0.28)", width=1.2, dash="dash"))
-    fig.add_shape(type="line", x0=GOAL_HALF_WIDTH, x1=GOAL_HALF_WIDTH, y0=y_min, y1=y_max, line=dict(color="rgba(102,112,133,0.28)", width=1.2, dash="dash"))
-    max_psxg = max(float(target["Post-Shot xG"].fillna(target["Shot xG"]).max()), 0.08)
-    for outcome in OUTCOME_ORDER:
-        group = target[target["Outcome"] == outcome].copy()
-        if group.empty:
-            continue
-        fig.add_trace(
-            go.Scatter(
-                x=group["_Goalmouth X"],
-                y=group["_Goalmouth Z"],
-                mode="markers",
-                name=outcome,
-                cliponaxis=False,
-                marker=dict(
-                    size=12 + (group["Post-Shot xG"].fillna(group["Shot xG"]) / max_psxg) * 28,
-                    color=OUTCOME_COLORS.get(outcome, "#344054"),
-                    symbol=OUTCOME_SYMBOLS.get(outcome, "circle"),
-                    opacity=0.88,
-                    line=dict(color="#ffffff", width=1.2),
-                ),
-                customdata=np.stack(
-                    [
-                        group["Player"].fillna("Unknown"),
-                        group["Minute"].fillna(0),
-                        group["Shot xG"].fillna(0),
-                        group["Post-Shot xG"].fillna(0),
-                        group["Outcome"].fillna("Unknown"),
-                    ],
-                    axis=-1,
-                ),
-                hovertemplate="%{customdata[0]} - %{customdata[4]}<br>Minute: %{customdata[1]:.0f}<br>xG: %{customdata[2]:.3f}<br>Post-shot xG: %{customdata[3]:.3f}<extra></extra>",
-            )
-        )
-    fig.update_layout(
-        height=height,
-        xaxis_title="<b>Target Width</b>",
-        yaxis_title="<b>Target Height</b>",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    )
-    fig.update_xaxes(range=[x_min, x_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
-    fig.update_yaxes(range=[y_min, y_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
-    return charting.polish_figure(fig, title)
-
-
 def _finishing_table(shots: pd.DataFrame) -> pd.DataFrame:
     if shots.empty:
         return pd.DataFrame(columns=["Player", "Shots", "Goals", "xG", "Post-Shot xG", "Avg xG", "Conversion %", "On Target %", "PSxG - xG"])
@@ -1425,7 +1261,15 @@ with tabs[3]:
     goal_cols = st.columns([0.04, 0.92, 0.04])
     with goal_cols[1]:
         st.plotly_chart(
-            _goalmouth_map(player_shots, f"{match_player}: Goalmouth Shot Placement", scale_shots=filtered_shots, height=680),
+            pitch.goalmouth_shot_map(
+                player_shots,
+                f"{match_player}: Goalmouth Shot Placement",
+                group_col="Outcome",
+                group_order=OUTCOME_ORDER,
+                group_colors=OUTCOME_COLORS,
+                group_symbols=OUTCOME_SYMBOLS,
+                height=680,
+            ),
             width="stretch",
         )
 
