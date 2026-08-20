@@ -23,9 +23,9 @@ DIRECTION_COLORS = {
 }
 OUTCOME_ORDER = ["Complete", "Incomplete", "Other"]
 OUTCOME_COLORS = {
-    "Complete": ui.CHARLTON_RED,
-    "Incomplete": "#7a7f87",
-    "Other": "#c69214",
+    "Complete": pitch.PASS_OUTCOME_COLORS["Complete"],
+    "Incomplete": pitch.PASS_OUTCOME_COLORS["Incomplete"],
+    "Other": pitch.PASS_OUTCOME_COLORS["Neutral"],
 }
 
 

@@ -26,6 +26,11 @@ BLUE = "#344054"
 GREEN = "#16803c"
 PITCH_GREEN = "#f7fbf8"
 LINE = "#b7c2d0"
+PASS_OUTCOME_COLORS = {
+    "Complete": GREEN,
+    "Incomplete": RED,
+    "Neutral": GREY,
+}
 PITCH_IMAGE_CANDIDATES = [
     {
         "path": ui.ASSETS_DIR / "football_pitch_template_landscape_white.png",
@@ -471,7 +476,6 @@ def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int
         ["Complete", "Incomplete"],
         default="Neutral",
     )
-    colors = {"Complete": RED, "Incomplete": GREY, "Neutral": GOLD}
     for outcome, group in passes.groupby("Outcome", sort=False):
         x_values: list[float | None] = []
         y_values: list[float | None] = []
@@ -484,7 +488,7 @@ def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int
                 y=y_values,
                 mode="lines",
                 name=outcome,
-                line=dict(color=colors.get(outcome, GREY), width=3.2),
+                line=dict(color=PASS_OUTCOME_COLORS.get(outcome, GREY), width=3.2),
                 opacity=0.82,
                 hoverinfo="skip",
             )
@@ -505,7 +509,12 @@ def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int
                 y=group["End Y"],
                 mode="markers",
                 name=f"{outcome} end",
-                marker=dict(size=6.5, color=colors.get(outcome, GREY), opacity=0.86, line=dict(color="#ffffff", width=0.8)),
+                marker=dict(
+                    size=6.5,
+                    color=PASS_OUTCOME_COLORS.get(outcome, GREY),
+                    opacity=0.86,
+                    line=dict(color="#ffffff", width=0.8),
+                ),
                 customdata=customdata,
                 hovertemplate=(
                     "%{customdata[0]} to %{customdata[1]}"
