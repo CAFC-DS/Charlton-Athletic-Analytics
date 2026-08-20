@@ -11,8 +11,8 @@ from utils import charting, data, final_third as ft, match_analysis as ma, pitch
 
 FINAL_THIRD_SOURCE = (
     "Final-third analysis uses CAFC_DB Impect provider events: adjusted start/end locations, "
-    "lanes, outcomes, receivers, PXT Pass, Team xT and shot sequence fields. It does not use aggregated "
-    "player/team average tables."
+    "lanes, outcomes, receivers, PXT Pass, Team xT, open-play low/high crosses and shot sequence fields. "
+    "It does not use aggregated player/team average tables."
 )
 
 LANE_ORDER = [
@@ -100,13 +100,13 @@ def _team_matches(matches: pd.DataFrame, team_name: str) -> pd.DataFrame:
     return matches[home | away].copy()
 
 
-def _linked_entry_sequence_shots(events: pd.DataFrame, entries: pd.DataFrame) -> pd.DataFrame:
+def _linked_sequence_shots(events: pd.DataFrame, actions: pd.DataFrame) -> pd.DataFrame:
     required_columns = {"MatchId", "Sequence Index"}
-    if events.empty or entries.empty or not required_columns.issubset(events.columns) or not required_columns.issubset(entries.columns):
+    if events.empty or actions.empty or not required_columns.issubset(events.columns) or not required_columns.issubset(actions.columns):
         return pd.DataFrame(columns=events.columns)
 
-    entry_sequences = entries.dropna(subset=["MatchId", "Sequence Index"])[["MatchId", "Sequence Index"]].drop_duplicates()
-    if entry_sequences.empty:
+    action_sequences = actions.dropna(subset=["MatchId", "Sequence Index"])[["MatchId", "Sequence Index"]].drop_duplicates()
+    if action_sequences.empty:
         return pd.DataFrame(columns=events.columns)
 
     action_type = events.get("Action Type", pd.Series("", index=events.index)).astype(str).str.upper()
@@ -114,7 +114,7 @@ def _linked_entry_sequence_shots(events: pd.DataFrame, entries: pd.DataFrame) ->
     if shots.empty:
         return shots
 
-    linked = shots.merge(entry_sequences, on=["MatchId", "Sequence Index"], how="inner")
+    linked = shots.merge(action_sequences, on=["MatchId", "Sequence Index"], how="inner")
     if {"MatchId", "Event Number"}.issubset(linked.columns):
         linked = linked.drop_duplicates(subset=["MatchId", "Event Number"])
     return linked
@@ -298,6 +298,61 @@ def _outcome_chart(outcome_summary: pd.DataFrame, title: str) -> go.Figure:
     )
     fig.update_layout(xaxis_title="Entries", yaxis_title="", showlegend=False)
     return charting.polish_figure(fig, title, height=360)
+
+
+def _crossing_type_chart(crosses: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+    summary = ft.cross_type_summary(crosses)
+    if summary.empty:
+        fig.add_annotation(text="No crossing data", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
+        return charting.polish_figure(fig, title, height=430)
+
+    for outcome in ft.CROSS_OUTCOME_ORDER:
+        attempts: list[int] = []
+        pxt_values: list[float] = []
+        for cross_type in ft.CROSS_TYPE_ORDER:
+            row = summary[
+                summary["Cross Type"].astype(str).eq(cross_type)
+                & summary["Outcome"].astype(str).eq(outcome)
+            ]
+            attempts.append(int(row["Crosses"].iloc[0]) if not row.empty else 0)
+            pxt_values.append(float(row["PXT Pass"].iloc[0]) if not row.empty else 0.0)
+
+        if not any(attempts):
+            continue
+        fig.add_trace(
+            go.Bar(
+                x=ft.CROSS_TYPE_ORDER,
+                y=attempts,
+                name=outcome,
+                marker_color=OUTCOME_COLORS.get(outcome, "#98a2b3"),
+                text=[f"{value:,}" if value else "" for value in attempts],
+                textposition="outside",
+                cliponaxis=False,
+                customdata=[[value] for value in pxt_values],
+                hovertemplate=(
+                    f"<b>%{{x}} - {outcome}</b>"
+                    "<br>Crosses: %{y:.0f}"
+                    "<br>Signed PXT: %{customdata[0]:+.3f}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="Cross Type",
+        yaxis_title="Crosses",
+        showlegend=True,
+        bargap=0.3,
+    )
+    fig.update_yaxes(tickformat=".0f")
+    fig = charting.polish_figure(fig, title, height=430)
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.17, xanchor="left", x=0, title_text="Outcome"),
+        margin=dict(l=42, r=28, t=76, b=90),
+    )
+    return fig
 
 
 def _funnel_chart(entries: pd.DataFrame, linked_shots: pd.DataFrame, title: str) -> go.Figure:
@@ -748,7 +803,7 @@ def _player_value_chart(player_summary: pd.DataFrame, title: str) -> go.Figure:
 
 ta.page_header(
     "Final Third Analysis",
-    "Analyse final-third entry quantity, quality, location and player contribution from event-level data.",
+    "Analyse final-third entries and crossing performance by quantity, quality, location and player contribution.",
     FINAL_THIRD_SOURCE,
 )
 
@@ -794,7 +849,7 @@ with st.expander("Final Third Analysis Controls", expanded=True):
         )
 
     if not selected_match_ids:
-        st.info("Select at least one match to analyse final-third entries.")
+        st.info("Select at least one match to analyse final-third entries and crossing.")
         st.stop()
 
     # Move data loading outside to keep it from re-running unnecessarily if possible, 
@@ -826,7 +881,7 @@ with st.expander("Final Third Analysis Controls", expanded=True):
     filter_cols = st.columns([1.3, 1.3, 1, 1])
     with filter_cols[0]:
         selected_entry_types = st.multiselect(
-            "Action Types",
+            "Entry Action Types",
             entry_types,
             default=entry_types,
             key="final_third_analysis_action_types",
@@ -841,7 +896,7 @@ with st.expander("Final Third Analysis Controls", expanded=True):
     with filter_cols[2]:
         min_value = st.number_input("Minimum Entry Value", min_value=0.0, value=0.0, step=0.01)
     with filter_cols[3]:
-        map_limit = st.slider("Map Entries", min_value=25, max_value=300, value=150, step=25)
+        map_limit = st.slider("Entry Map Limit", min_value=25, max_value=300, value=150, step=25)
 
     entries = base_entries.copy()
     if entry_types:
@@ -850,7 +905,7 @@ with st.expander("Final Third Analysis Controls", expanded=True):
         entries = entries[entries["Result"].astype(str).isin(selected_entry_results)]
     entries = entries[pd.to_numeric(entries["_Entry Value"], errors="coerce").fillna(0) >= min_value].copy()
 
-linked_shots = _linked_entry_sequence_shots(events, entries)
+linked_shots = _linked_sequence_shots(events, entries)
 entry_value_total = pd.to_numeric(entries.get("_Entry Value", pd.Series(dtype="float64")), errors="coerce").fillna(0).sum()
 entry_value_avg = pd.to_numeric(entries.get("_Entry Value", pd.Series(dtype="float64")), errors="coerce").fillna(0).mean() if not entries.empty else 0
 successful_entries = int(entries["_Outcome"].astype(str).eq("Successful").sum()) if "_Outcome" in entries else 0
@@ -870,6 +925,75 @@ summary_cols[5].metric("xG From Entry Sequences", f"{shots_xg:.2f}", f"{_goal_co
 st.caption(
     "Shots and xG are linked by MatchId and Sequence Index, so they are a sequence-based proxy for what happened after entries."
 )
+
+crosses = ft.prepare_crosses(events)
+crossing = ft.crossing_summary(crosses)
+cross_linked_shots = _linked_sequence_shots(events, crosses)
+cross_shots_xg = pd.to_numeric(
+    cross_linked_shots.get("Shot xG", pd.Series(dtype="float64")),
+    errors="coerce",
+).fillna(0).sum()
+crosses_per_match = crossing["Attempts"] / max(len(selected_match_ids), 1)
+
+ta.section_heading("Crossing Analysis")
+st.caption(
+    "All open-play Impect LOW_CROSS and HIGH_CROSS events from the selected team and matches are included. "
+    "Crossing is kept separate from the entry filters because many deliveries start inside the final third; "
+    "SUCCESS counts as completed, while provider NEUTRAL outcomes remain in Other."
+)
+
+crossing_cols = st.columns(6)
+crossing_cols[0].metric(
+    "Crosses",
+    f"{crossing['Attempts']:,}",
+    f"{crosses_per_match:.1f} Per Match",
+    delta_color="off",
+)
+crossing_cols[1].metric(
+    "Completed",
+    f"{crossing['Completed']:,}",
+    f"{crossing['Completion %']:.1f}% Completion",
+    delta_color="off",
+)
+crossing_cols[2].metric(
+    "Box Deliveries",
+    f"{crossing['Box Deliveries']:,}",
+    f"{crossing['Box Delivery %']:.1f}% Of Crosses",
+    delta_color="off",
+)
+crossing_cols[3].metric(
+    "Low / High",
+    f"{crossing['Low Crosses']:,} / {crossing['High Crosses']:,}",
+)
+crossing_cols[4].metric("Signed Cross PXT", f"{crossing['PXT Pass']:+.2f}")
+crossing_cols[5].metric(
+    "Shots From Cross Sequences",
+    f"{len(cross_linked_shots):,}",
+    f"{cross_shots_xg:.2f} xG / {_goal_count(cross_linked_shots)} Goals",
+    delta_color="off",
+)
+
+if crosses.empty:
+    st.info("No open-play cross events are available for the selected team and matches.")
+else:
+    cross_map_col, cross_type_col = st.columns([1.15, 1])
+    with cross_map_col:
+        st.plotly_chart(
+            pitch.pass_map(crosses, team_name, f"{team_name}: Cross Delivery Map", max_passes=1200),
+            width="stretch",
+        )
+    with cross_type_col:
+        st.plotly_chart(
+            _crossing_type_chart(crosses, f"{team_name}: Cross Type and Outcome"),
+            width="stretch",
+        )
+
+with st.expander("Show Crossing by Player"):
+    crossing_players = ft.player_crossing_summary(crosses)
+    if crossing_players.empty:
+        st.caption("No player crossing rows are available for the selected team and matches.")
+    else:
+        st.dataframe(crossing_players, width="stretch", hide_index=True)
 
 match_summary = _match_entry_summary(entries, team_matches)
 outcomes = ft.outcome_summary(entries)
@@ -988,6 +1112,10 @@ with st.expander("Terminology Key"):
         - **Average Entry Value**: Entry Value divided by number of entries. This is the quality side of the page.
         - **Quantity vs Quality**: Match-by-match comparison of how often the team enters and how valuable those entries are.
         - **Shots From Entry Sequences**: Shots sharing MatchId and Sequence Index with an entry.
+        - **Cross**: An open-play Impect pass labelled LOW_CROSS or HIGH_CROSS. Crosses do not have to start outside the selected entry zone.
+        - **Box Delivery**: A cross whose adjusted end location is inside the opposition penalty area.
+        - **Shots From Cross Sequences**: Shots sharing MatchId and Sequence Index with a cross; this is a sequence-level outcome proxy.
+        - **Signed Cross PXT**: Impect PXT Pass summed across crosses. Negative actions reduce the total rather than being clipped to zero.
         - **Lane Profile**: Where entries start and where they end by pitch lane.
         - **Data Source**: CAFC_DB Impect provider events, not aggregated player/team average tables.
         """

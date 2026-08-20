@@ -10,6 +10,13 @@ from utils import pitch
 
 ZONE_OPTIONS = ["Final Third", "Penalty Box"]
 
+CROSS_ACTION_LABELS = {
+    "LOW_CROSS": "Low Cross",
+    "HIGH_CROSS": "High Cross",
+}
+CROSS_TYPE_ORDER = ["Low Cross", "High Cross"]
+CROSS_OUTCOME_ORDER = ["Successful", "Unsuccessful", "Other"]
+
 UNSUCCESSFUL_RESULTS = {
     "FAIL",
     "FAILED",
@@ -87,6 +94,125 @@ def result_status(results: pd.Series) -> pd.Series:
         ),
         index=results.index,
     )
+
+
+def prepare_crosses(events: pd.DataFrame) -> pd.DataFrame:
+    """Return open-play Impect cross events with consistent analyst fields."""
+    if events.empty or "Action" not in events:
+        crosses = events.iloc[0:0].copy()
+    else:
+        action = events["Action"].astype(str).str.strip().str.upper()
+        crosses = events[action.isin(CROSS_ACTION_LABELS)].copy()
+
+    if crosses.empty:
+        crosses["_Cross Type"] = pd.Series(dtype="object")
+        crosses["_Outcome"] = pd.Series(dtype="object")
+        crosses["_Cross Value"] = pd.Series(dtype="float64")
+        crosses["_Into Box"] = pd.Series(dtype="bool")
+        return crosses
+
+    action = crosses["Action"].astype(str).str.strip().str.upper()
+    crosses["_Cross Type"] = action.map(CROSS_ACTION_LABELS).fillna("Other Cross")
+    results = crosses.get("Result", pd.Series("", index=crosses.index))
+    crosses["_Outcome"] = result_status(results)
+    crosses["_Cross Value"] = pd.to_numeric(
+        crosses.get("PXT Pass", pd.Series(0.0, index=crosses.index)),
+        errors="coerce",
+    ).fillna(0)
+
+    end_x = pd.to_numeric(
+        crosses.get("End X", pd.Series(index=crosses.index, dtype="float64")),
+        errors="coerce",
+    )
+    end_y = pd.to_numeric(
+        crosses.get("End Y", pd.Series(index=crosses.index, dtype="float64")),
+        errors="coerce",
+    )
+    crosses["_Into Box"] = end_x.ge(pitch.PENALTY_BOX_X) & end_y.between(
+        -pitch.PENALTY_BOX_Y,
+        pitch.PENALTY_BOX_Y,
+    )
+    return crosses
+
+
+def crossing_summary(events: pd.DataFrame) -> dict[str, float | int]:
+    """Summarise cross volume, execution, delivery type and event value."""
+    crosses = prepare_crosses(events)
+    attempts = len(crosses)
+    completed = int(crosses["_Outcome"].astype(str).eq("Successful").sum()) if attempts else 0
+    box_deliveries = int(crosses["_Into Box"].sum()) if attempts else 0
+
+    return {
+        "Attempts": attempts,
+        "Completed": completed,
+        "Completion %": completed / attempts * 100 if attempts else 0.0,
+        "Low Crosses": int(crosses["_Cross Type"].eq("Low Cross").sum()) if attempts else 0,
+        "High Crosses": int(crosses["_Cross Type"].eq("High Cross").sum()) if attempts else 0,
+        "Box Deliveries": box_deliveries,
+        "Box Delivery %": box_deliveries / attempts * 100 if attempts else 0.0,
+        "PXT Pass": float(crosses["_Cross Value"].sum()) if attempts else 0.0,
+    }
+
+
+def cross_type_summary(events: pd.DataFrame) -> pd.DataFrame:
+    """Summarise cross volume and value by delivery type and outcome."""
+    columns = ["Cross Type", "Outcome", "Crosses", "PXT Pass"]
+    crosses = prepare_crosses(events)
+    if crosses.empty:
+        return pd.DataFrame(columns=columns)
+
+    summary = crosses.groupby(["_Cross Type", "_Outcome"], as_index=False).agg(
+        Crosses=("_Cross Type", "size"),
+        **{"PXT Pass": ("_Cross Value", "sum")},
+    )
+    summary = summary.rename(columns={"_Cross Type": "Cross Type", "_Outcome": "Outcome"})
+    summary["Crosses"] = pd.to_numeric(summary["Crosses"], errors="coerce").fillna(0).astype(int)
+    summary["PXT Pass"] = pd.to_numeric(summary["PXT Pass"], errors="coerce").fillna(0).round(4)
+    return summary[columns]
+
+
+def player_crossing_summary(events: pd.DataFrame) -> pd.DataFrame:
+    """Summarise open-play crossing contribution by player."""
+    columns = [
+        "Player",
+        "Attempts",
+        "Completed",
+        "Completion %",
+        "Low",
+        "High",
+        "Box Deliveries",
+        "PXT Pass",
+    ]
+    crosses = prepare_crosses(events)
+    if crosses.empty or "Player" not in crosses:
+        return pd.DataFrame(columns=columns)
+
+    values = crosses.copy()
+    values["Player"] = values["Player"].fillna("Unknown").astype(str)
+    values["_Completed"] = values["_Outcome"].astype(str).eq("Successful")
+    values["_Low"] = values["_Cross Type"].eq("Low Cross")
+    values["_High"] = values["_Cross Type"].eq("High Cross")
+
+    summary = values.groupby("Player", as_index=False).agg(
+        Attempts=("Player", "size"),
+        Completed=("_Completed", "sum"),
+        Low=("_Low", "sum"),
+        High=("_High", "sum"),
+        **{
+            "Box Deliveries": ("_Into Box", "sum"),
+            "PXT Pass": ("_Cross Value", "sum"),
+        },
+    )
+    for column in ["Attempts", "Completed", "Low", "High", "Box Deliveries"]:
+        summary[column] = pd.to_numeric(summary[column], errors="coerce").fillna(0).astype(int)
+    summary["Completion %"] = (
+        summary["Completed"] / summary["Attempts"].replace(0, pd.NA) * 100
+    ).fillna(0).round(1)
+    summary["PXT Pass"] = pd.to_numeric(summary["PXT Pass"], errors="coerce").fillna(0).round(4)
+    return summary.sort_values(
+        ["Attempts", "Completed", "PXT Pass"],
+        ascending=[False, False, False],
+    ).reset_index(drop=True)[columns]
 
 
 def prepare_entries(
