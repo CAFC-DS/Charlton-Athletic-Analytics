@@ -31,6 +31,8 @@ PASS_OUTCOME_COLORS = {
     "Incomplete": RED,
     "Neutral": GREY,
 }
+YELLOW_CARD_ICON = "\U0001f7e8"
+RED_CARD_ICON = "\U0001f7e5"
 PITCH_IMAGE_CANDIDATES = [
     {
         "path": ui.ASSETS_DIR / "football_pitch_template_landscape_white.png",
@@ -1690,8 +1692,117 @@ def xg_timeline(events: pd.DataFrame, title: str, end_minute: float | None = Non
     return fig
 
 
+def _timeline_minute_series(frame: pd.DataFrame) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype="float64")
+    second = pd.to_numeric(frame["Second"], errors="coerce") if "Second" in frame else pd.Series(np.nan, index=frame.index)
+    minute = pd.to_numeric(frame["Minute"], errors="coerce") if "Minute" in frame else pd.Series(np.nan, index=frame.index)
+    period = pd.to_numeric(frame["Period"], errors="coerce") if "Period" in frame else pd.Series(np.nan, index=frame.index)
+    period_base_seconds = np.select(
+        [period.eq(1), period.eq(2), period.eq(3), period.eq(4)],
+        [0, 45 * 60, 90 * 60, 105 * 60],
+        default=np.nan,
+    )
+    offset_bucket = np.floor(second / 10000).clip(lower=0)
+    fallback_base_seconds = offset_bucket * 45 * 60
+    base_seconds = pd.Series(period_base_seconds, index=frame.index).where(pd.notna(period_base_seconds), fallback_base_seconds)
+    period_seconds = second % 10000
+    elapsed_seconds = second.where(second < 10000, period_seconds + base_seconds)
+    derived = np.floor(elapsed_seconds / 60) + 1
+    derived = derived.where(second.notna(), minute)
+    return pd.to_numeric(derived, errors="coerce").clip(lower=0, upper=130)
+
+
+def _timeline_card_events(events: pd.DataFrame) -> pd.DataFrame:
+    columns = ["Team", "Player", "Minute", "Card", "Icon"]
+    if events.empty:
+        return pd.DataFrame(columns=columns)
+
+    action_type = events["Action Type"].astype(str).str.upper() if "Action Type" in events else pd.Series("", index=events.index)
+    action = events["Action"].astype(str).str.upper() if "Action" in events else pd.Series("", index=events.index)
+    result = events["Result"].astype(str).str.upper() if "Result" in events else pd.Series("", index=events.index)
+    combined = action_type + " " + action + " " + result
+    mask = combined.str.contains("YELLOW_CARD|RED_CARD|SECOND_YELLOW|BOOKING|CARD", regex=True, na=False)
+    cards = events[mask].copy()
+    if cards.empty:
+        return pd.DataFrame(columns=columns)
+
+    card_text = combined.loc[cards.index]
+    cards["Minute"] = _timeline_minute_series(cards)
+    cards["Card"] = np.select(
+        [
+            card_text.str.contains("RED_CARD|SECOND_YELLOW", regex=True, na=False),
+            card_text.str.contains("YELLOW_CARD|BOOKING|CARD", regex=True, na=False),
+        ],
+        ["Red Card", "Yellow Card"],
+        default="Card",
+    )
+    cards["Icon"] = np.where(cards["Card"].eq("Red Card"), RED_CARD_ICON, YELLOW_CARD_ICON)
+    for column in columns:
+        if column not in cards:
+            cards[column] = np.nan
+    return cards[columns].dropna(subset=["Minute"]).reset_index(drop=True)
+
+
+def _timeline_card_labels(players: pd.Series) -> list[str]:
+    names = players.fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+    last_names = names.apply(lambda value: value.split()[-1] if value.split() else value)
+    counts = last_names.value_counts()
+    labels = []
+    for name, last in zip(names, last_names, strict=False):
+        parts = name.split()
+        labels.append(f"{parts[0][0]}. {last}" if counts.get(last, 0) > 1 and len(parts) > 1 else last)
+    return labels
+
+
+def _timeline_card_positions(teams: list[str], scale: float) -> dict[str, float]:
+    marker_scale = max(float(scale), 0.1)
+    positions: dict[str, float] = {}
+    for index, team in enumerate(teams):
+        if index == 0:
+            positions[str(team)] = marker_scale * 1.08
+        elif index == 1:
+            positions[str(team)] = -marker_scale * 1.08
+        else:
+            positions[str(team)] = marker_scale * (1.08 + 0.16 * (index - 1))
+    return positions
+
+
+def _add_timeline_card_traces(fig: go.Figure, cards: pd.DataFrame, team_positions: dict[str, float]) -> None:
+    if cards.empty:
+        return
+    for team, y_base in team_positions.items():
+        team_cards = cards[cards["Team"].astype(str) == str(team)]
+        if team_cards.empty:
+            continue
+        card_names = _timeline_card_labels(team_cards["Player"])
+        customdata = np.stack(
+            [
+                team_cards["Player"].fillna("Unknown"),
+                team_cards["Card"].fillna("Card"),
+                team_cards["Minute"].fillna(0),
+            ],
+            axis=-1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=team_cards["Minute"],
+                y=[y_base] * len(team_cards),
+                mode="text",
+                name=f"{team} cards",
+                text=[f"{icon} {name}" for icon, name in zip(team_cards["Icon"], card_names, strict=False)],
+                textposition="middle center",
+                textfont=dict(size=13, color=DARK),
+                customdata=customdata,
+                hovertemplate=f"{team}<br>%{{customdata[1]}}: %{{customdata[0]}}<br>Minute: %{{customdata[2]:.0f}}<extra></extra>",
+                showlegend=False,
+            )
+        )
+
+
 def threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     fig = go.Figure()
+    cards = _timeline_card_events(events)
     if events.empty:
         fig = charting.polish_figure(fig, title, height=500)
         fig.add_annotation(text="No event threat values", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
@@ -1702,18 +1813,29 @@ def threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     for col in metric_cols:
         values[col] = pd.to_numeric(values[col], errors="coerce")
     values["Threat"] = values[metric_cols].clip(lower=0).max(axis=1).fillna(0) if metric_cols else 0
-    values["Minute"] = pd.to_numeric(values["Minute"], errors="coerce").fillna(0).astype(int)
+    values["Minute"] = _timeline_minute_series(values).fillna(0).astype(int)
     values = values[values["Threat"] > 0]
     if values.empty:
         fig = charting.polish_figure(fig, title, height=500)
         fig.add_annotation(text="No positive threat values", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
+        if not cards.empty:
+            teams = cards["Team"].dropna().astype(str).drop_duplicates().tolist()
+            _add_timeline_card_traces(fig, cards, _timeline_card_positions(teams, 0.2))
+            fig.update_xaxes(range=[0, max(96, _finite(cards["Minute"].max(), 96))], dtick=15)
+            fig.update_yaxes(range=[-0.35, 0.35])
         return fig
 
     minute_values = values.groupby(["Team", "Minute"], as_index=False)["Threat"].sum().sort_values(["Team", "Minute"])
     colors = [RED, DARK, GOLD, BLUE]
+    team_order = minute_values["Team"].drop_duplicates().astype(str).tolist()
+    for card_team in cards["Team"].dropna().astype(str).drop_duplicates():
+        if card_team not in team_order:
+            team_order.append(card_team)
+    max_cumulative = 0.0
     for index, (team, group) in enumerate(minute_values.groupby("Team", sort=False)):
         group = group.copy()
         group["Cumulative Threat"] = group["Threat"].cumsum()
+        max_cumulative = max(max_cumulative, float(group["Cumulative Threat"].max()))
         fig.add_trace(
             go.Scatter(
                 x=group["Minute"],
@@ -1724,8 +1846,14 @@ def threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
                 hovertemplate=f"{team}<br>Minute: %{{x:.0f}}<br>Cumulative threat: %{{y:.2f}}<extra></extra>",
             )
         )
+    _add_timeline_card_traces(fig, cards, _timeline_card_positions(team_order, max_cumulative))
     fig.update_layout(height=540, xaxis_title="Minute", yaxis_title="Cumulative threat")
-    fig.update_xaxes(range=[0, max(96, _finite(values["Minute"].max(), 96))], dtick=15)
+    timeline_max = max(
+        96,
+        _finite(values["Minute"].max(), 96),
+        _finite(cards["Minute"].max(), 96) if not cards.empty else 96,
+    )
+    fig.update_xaxes(range=[0, timeline_max], dtick=15)
     fig.update_yaxes(tickformat=".2f", rangemode="tozero")
     fig = charting.polish_figure(fig, title)
     fig.update_layout(
@@ -1933,6 +2061,7 @@ def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     rather than being dropped.
     """
     fig = go.Figure()
+    cards = _timeline_card_events(events)
     if events.empty:
         fig = charting.polish_figure(fig, title, height=500)
         fig.add_annotation(text="No expected-threat events", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
@@ -1942,18 +2071,29 @@ def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     pxt_pass = pd.to_numeric(values.get("PXT Pass"), errors="coerce") if "PXT Pass" in values else pd.Series(0.0, index=values.index)
     pxt_shot = pd.to_numeric(values.get("PXT Shot"), errors="coerce") if "PXT Shot" in values else pd.Series(0.0, index=values.index)
     values["xT Value"] = pxt_pass.fillna(0.0) + pxt_shot.fillna(0.0)
-    values["Minute"] = pd.to_numeric(values["Minute"], errors="coerce").fillna(0).astype(int)
+    values["Minute"] = _timeline_minute_series(values).fillna(0).astype(int)
     values = values[values["xT Value"] != 0]
     if values.empty:
         fig = charting.polish_figure(fig, title, height=500)
         fig.add_annotation(text="No expected-threat events", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(color=GREY))
+        if not cards.empty:
+            teams = cards["Team"].dropna().astype(str).drop_duplicates().tolist()
+            _add_timeline_card_traces(fig, cards, _timeline_card_positions(teams, 0.2))
+            fig.update_xaxes(range=[0, max(96, _finite(cards["Minute"].max(), 96))], dtick=15)
+            fig.update_yaxes(range=[-0.35, 0.35])
         return fig
 
     minute_values = values.groupby(["Team", "Minute"], as_index=False)["xT Value"].sum().sort_values(["Team", "Minute"])
     colors = [RED, DARK, GOLD, BLUE]
+    team_order = minute_values["Team"].drop_duplicates().astype(str).tolist()
+    for card_team in cards["Team"].dropna().astype(str).drop_duplicates():
+        if card_team not in team_order:
+            team_order.append(card_team)
+    max_abs_cumulative = 0.0
     for index, (team, group) in enumerate(minute_values.groupby("Team", sort=False)):
         group = group.copy()
         group["Cumulative xT"] = group["xT Value"].cumsum()
+        max_abs_cumulative = max(max_abs_cumulative, float(group["Cumulative xT"].abs().max()))
         fig.add_trace(
             go.Scatter(
                 x=group["Minute"],
@@ -1964,8 +2104,14 @@ def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
                 hovertemplate=f"{team}<br>Minute: %{{x:.0f}}<br>Cumulative xT: %{{y:.3f}}<extra></extra>",
             )
         )
+    _add_timeline_card_traces(fig, cards, _timeline_card_positions(team_order, max_abs_cumulative))
     fig.update_layout(height=540, xaxis_title="Minute", yaxis_title="Cumulative expected threat (PXT)")
-    fig.update_xaxes(range=[0, max(96, _finite(values["Minute"].max(), 96))], dtick=15)
+    timeline_max = max(
+        96,
+        _finite(values["Minute"].max(), 96),
+        _finite(cards["Minute"].max(), 96) if not cards.empty else 96,
+    )
+    fig.update_xaxes(range=[0, timeline_max], dtick=15)
     fig.update_yaxes(tickformat=".2f")
     fig = charting.polish_figure(fig, title)
     fig.update_layout(
