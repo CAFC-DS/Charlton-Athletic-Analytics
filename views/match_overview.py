@@ -983,9 +983,9 @@ def _card_events(events: pd.DataFrame) -> pd.DataFrame:
     if events.empty:
         return pd.DataFrame(columns=columns)
 
-    action_type = events["Action Type"].astype(str).str.upper() if "Action Type" in events else pd.Series("", index=events.index)
-    action = events["Action"].astype(str).str.upper() if "Action" in events else pd.Series("", index=events.index)
-    result = events["Result"].astype(str).str.upper() if "Result" in events else pd.Series("", index=events.index)
+    action_type = events["Action Type"].fillna("").astype(str).str.upper() if "Action Type" in events else pd.Series("", index=events.index)
+    action = events["Action"].fillna("").astype(str).str.upper() if "Action" in events else pd.Series("", index=events.index)
+    result = events["Result"].fillna("").astype(str).str.upper() if "Result" in events else pd.Series("", index=events.index)
     combined = action_type + " " + action + " " + result
     mask = combined.str.contains("YELLOW_CARD|RED_CARD|SECOND_YELLOW|BOOKING|CARD", regex=True, na=False)
     cards = events[mask].copy()
@@ -1100,7 +1100,7 @@ def _momentum_chart(events: pd.DataFrame, home: str, away: str, title: str) -> g
     cards = _card_events(events)
     if not cards.empty:
         for team, y_base in [(home, max_axis * 0.82), (away, -max_axis * 0.82)]:
-            team_cards = cards[cards["Team"].astype(str) == str(team)]
+            team_cards = cards[cards["Team"].map(lambda value: _same_team_name(value, team))]
             if team_cards.empty:
                 continue
             customdata = np.stack(
@@ -1418,6 +1418,7 @@ except Exception as exc:
 home_team = str(match_row.get("Home", "Home"))
 away_team = str(match_row.get("Away", "Away"))
 fixture_id, possession = _load_match_possession(match_row)
+events = data.append_opta_card_events(events, fixture_id)
 stats = _overview_stats(match_row, events, possession)
 shots = _shot_events(events)
 

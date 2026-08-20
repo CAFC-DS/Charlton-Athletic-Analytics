@@ -180,6 +180,8 @@ metric_cols[1].metric("Result", selected_summary["Result"])
 selected_match_xt = float(team_matches_with_xt.loc[team_matches_with_xt["MatchId"] == match_row.get("MatchId"), "xT"].sum())
 metric_cols[2].metric("Match Expected Threat", f"{selected_match_xt:+.3f}")
 match_all_teams_events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), action_types=data.XT_ACTION_TYPES, limit=9000)
+fixture_id = data.opta_fixture_id_for_match(match_row)
+match_all_teams_events = data.append_opta_card_events(match_all_teams_events, fixture_id)
 metric_cols[3].metric("Event Rows", len(match_all_teams_events))
 
 st.plotly_chart(pitch.expected_threat_timeline(match_all_teams_events, f"{match_row.get('Match', 'Selected Match')}: Cumulative Expected Threat"), width="stretch")

@@ -1718,9 +1718,9 @@ def _timeline_card_events(events: pd.DataFrame) -> pd.DataFrame:
     if events.empty:
         return pd.DataFrame(columns=columns)
 
-    action_type = events["Action Type"].astype(str).str.upper() if "Action Type" in events else pd.Series("", index=events.index)
-    action = events["Action"].astype(str).str.upper() if "Action" in events else pd.Series("", index=events.index)
-    result = events["Result"].astype(str).str.upper() if "Result" in events else pd.Series("", index=events.index)
+    action_type = events["Action Type"].fillna("").astype(str).str.upper() if "Action Type" in events else pd.Series("", index=events.index)
+    action = events["Action"].fillna("").astype(str).str.upper() if "Action" in events else pd.Series("", index=events.index)
+    result = events["Result"].fillna("").astype(str).str.upper() if "Result" in events else pd.Series("", index=events.index)
     combined = action_type + " " + action + " " + result
     mask = combined.str.contains("YELLOW_CARD|RED_CARD|SECOND_YELLOW|BOOKING|CARD", regex=True, na=False)
     cards = events[mask].copy()
@@ -1755,6 +1755,18 @@ def _timeline_card_labels(players: pd.Series) -> list[str]:
     return labels
 
 
+def _timeline_team_key(value: object) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _timeline_same_team(candidate: object, target: object) -> bool:
+    candidate_key = _timeline_team_key(candidate)
+    target_key = _timeline_team_key(target)
+    if not candidate_key or not target_key:
+        return False
+    return candidate_key == target_key or candidate_key in target_key or target_key in candidate_key
+
+
 def _timeline_card_positions(teams: list[str], scale: float) -> dict[str, float]:
     marker_scale = max(float(scale), 0.1)
     positions: dict[str, float] = {}
@@ -1772,7 +1784,7 @@ def _add_timeline_card_traces(fig: go.Figure, cards: pd.DataFrame, team_position
     if cards.empty:
         return
     for team, y_base in team_positions.items():
-        team_cards = cards[cards["Team"].astype(str) == str(team)]
+        team_cards = cards[cards["Team"].map(lambda value: _timeline_same_team(value, team))]
         if team_cards.empty:
             continue
         card_names = _timeline_card_labels(team_cards["Player"])
@@ -1829,7 +1841,7 @@ def threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     colors = [RED, DARK, GOLD, BLUE]
     team_order = minute_values["Team"].drop_duplicates().astype(str).tolist()
     for card_team in cards["Team"].dropna().astype(str).drop_duplicates():
-        if card_team not in team_order:
+        if not any(_timeline_same_team(card_team, existing_team) for existing_team in team_order):
             team_order.append(card_team)
     max_cumulative = 0.0
     for index, (team, group) in enumerate(minute_values.groupby("Team", sort=False)):
@@ -2087,7 +2099,7 @@ def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
     colors = [RED, DARK, GOLD, BLUE]
     team_order = minute_values["Team"].drop_duplicates().astype(str).tolist()
     for card_team in cards["Team"].dropna().astype(str).drop_duplicates():
-        if card_team not in team_order:
+        if not any(_timeline_same_team(card_team, existing_team) for existing_team in team_order):
             team_order.append(card_team)
     max_abs_cumulative = 0.0
     for index, (team, group) in enumerate(minute_values.groupby("Team", sort=False)):

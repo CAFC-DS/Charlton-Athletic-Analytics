@@ -523,6 +523,11 @@ OPTA_QUALIFIER_COLUMNS = [
     "Provider Qualifier Row Id",
     "Qualifier Value",
 ]
+OPTA_CARD_QUALIFIER_LABELS = {
+    31: "Yellow Card",
+    32: "Second Yellow",
+    33: "Red Card",
+}
 
 # Trusted match-level defensive totals from Impect's squad/player KPI facts.
 # These are deliberately separate from the iteration-average loaders:
@@ -4230,6 +4235,147 @@ def load_opta_fixtures(season: str | None = None, team: str | None = None) -> pd
     for column in ["Home Goals", "Away Goals"]:
         fixtures[column] = pd.to_numeric(fixtures[column], errors="coerce")
     return fixtures[columns]
+
+
+def _opta_team_key(value: object) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _opta_same_team(candidate: object, target: object) -> bool:
+    candidate_key = _opta_team_key(candidate)
+    target_key = _opta_team_key(target)
+    if not candidate_key or not target_key:
+        return False
+    return candidate_key == target_key or candidate_key in target_key or target_key in candidate_key
+
+
+def opta_fixture_id_for_match(match_row: object) -> object | None:
+    """Resolve the Opta fixture paired with an Impect match row."""
+    if match_row is None:
+        return None
+    get_value = match_row.get if hasattr(match_row, "get") else lambda key, default=None: default
+    match_date = pd.to_datetime(get_value("Date"), errors="coerce")
+    if pd.isna(match_date):
+        return None
+    try:
+        fixtures = load_opta_fixtures(season=str(get_value("Season", "")))
+    except Exception:
+        return None
+    if fixtures.empty or "FixtureId" not in fixtures:
+        return None
+
+    date_key = match_date.strftime("%Y-%m-%d")
+    fixture_dates = pd.to_datetime(fixtures.get("Date"), errors="coerce")
+    date_mask = fixture_dates.dt.strftime("%Y-%m-%d").eq(date_key)
+    home = get_value("Home")
+    away = get_value("Away")
+    home_match = fixtures.get("Home", pd.Series(index=fixtures.index, dtype=object)).map(
+        lambda value: _opta_same_team(value, home)
+    )
+    away_match = fixtures.get("Away", pd.Series(index=fixtures.index, dtype=object)).map(
+        lambda value: _opta_same_team(value, away)
+    )
+    swapped_home_match = fixtures.get("Home", pd.Series(index=fixtures.index, dtype=object)).map(
+        lambda value: _opta_same_team(value, away)
+    )
+    swapped_away_match = fixtures.get("Away", pd.Series(index=fixtures.index, dtype=object)).map(
+        lambda value: _opta_same_team(value, home)
+    )
+    matching = fixtures[date_mask & ((home_match & away_match) | (swapped_home_match & swapped_away_match))]
+    if matching.empty:
+        return None
+    fixture_id = matching.iloc[0].get("FixtureId")
+    return None if pd.isna(fixture_id) else fixture_id
+
+
+def load_opta_card_events(fixture_id: object | None = None) -> pd.DataFrame:
+    """Return Opta booking events identified by F24 card qualifiers.
+
+    Opta stores bookings as qualifiers on provider event rows rather than as
+    a labelled action. Qualifier 31 is yellow, 32 is second yellow and 33 is
+    red. The provider event-row id is used for the join because EventId can be
+    reused across the two team streams in the parsed feed.
+    """
+    columns = [*OPTA_EVENT_COLUMNS, "Card"]
+    if USE_MOCK_DATA or fixture_id is None:
+        return pd.DataFrame(columns=columns)
+
+    events = load_opta_events(fixture_id, limit=50000)
+    if events.empty:
+        return pd.DataFrame(columns=columns)
+    qualifiers = load_opta_event_qualifiers(fixture_id, limit=100000)
+    if qualifiers.empty:
+        return pd.DataFrame(columns=columns)
+
+    qualifiers = qualifiers.copy()
+    qualifiers["_Qualifier Id"] = pd.to_numeric(qualifiers["QualifierId"], errors="coerce")
+    qualifiers = qualifiers[qualifiers["_Qualifier Id"].isin(OPTA_CARD_QUALIFIER_LABELS)].copy()
+    if qualifiers.empty or "Provider Event Row Id" not in events or "Provider Event Row Id" not in qualifiers:
+        return pd.DataFrame(columns=columns)
+
+    qualifiers["_Event Key"] = qualifiers["Provider Event Row Id"].astype("string")
+    qualifiers["_Card Priority"] = qualifiers["_Qualifier Id"].map({31: 1, 32: 2, 33: 3}).fillna(0)
+    qualifiers = (
+        qualifiers.sort_values(["_Event Key", "_Card Priority"], ascending=[True, False])
+        .drop_duplicates("_Event Key")
+        .copy()
+    )
+    qualifiers["Card"] = qualifiers["_Qualifier Id"].map(OPTA_CARD_QUALIFIER_LABELS)
+
+    events = events.copy()
+    events["_Event Key"] = events["Provider Event Row Id"].astype("string")
+    cards = events.merge(qualifiers[["_Event Key", "Card"]], on="_Event Key", how="inner")
+    if cards.empty:
+        return pd.DataFrame(columns=columns)
+    return cards[columns].drop_duplicates("Provider Event Row Id").reset_index(drop=True)
+
+
+def append_opta_card_events(events: pd.DataFrame, fixture_id: object | None) -> pd.DataFrame:
+    """Append normalized Opta booking rows to an Impect event frame.
+
+    Card enrichment is optional: if the Opta fixture or qualifier feed is not
+    available, the original Impect frame is returned unchanged so the main
+    event visualisations remain usable.
+    """
+    base = events.copy() if isinstance(events, pd.DataFrame) else pd.DataFrame()
+    if fixture_id is None:
+        return base
+    try:
+        cards = load_opta_card_events(fixture_id)
+    except Exception:
+        return base
+    if cards.empty:
+        return base
+
+    existing_card_mask = pd.Series(False, index=base.index)
+    for column in ["Action Type", "Action", "Result"]:
+        if column in base:
+            existing_card_mask = existing_card_mask | base[column].fillna("").astype(str).str.upper().str.contains(
+                "YELLOW_CARD|RED_CARD|SECOND_YELLOW|BOOKING|CARD", regex=True, na=False
+            )
+    base = base.loc[~existing_card_mask].copy()
+
+    card_rows = pd.DataFrame(index=cards.index, columns=MATCH_EVENT_COLUMNS)
+    for column in ["Date", "Home", "Away", "PlayerId", "Player", "Period", "Minute"]:
+        if column in cards:
+            card_rows[column] = cards[column].to_numpy()
+    team_names = cards["Team"].copy()
+    home_names = base["Home"].dropna().astype(str).unique().tolist() if "Home" in base else []
+    away_names = base["Away"].dropna().astype(str).unique().tolist() if "Away" in base else []
+    home_name = home_names[0] if home_names else None
+    away_name = away_names[0] if away_names else None
+    if home_name:
+        team_names = team_names.map(lambda value: home_name if _opta_same_team(value, home_name) else value)
+    if away_name:
+        team_names = team_names.map(lambda value: away_name if _opta_same_team(value, away_name) else value)
+    card_rows["Team"] = team_names.to_numpy()
+    card_rows["Action Type"] = "CARD"
+    card_rows["Action"] = cards["Card"].astype(str).str.upper().str.replace(" ", "_", regex=False).to_numpy()
+    card_rows["Result"] = "CARD"
+    # Opta's Second is within the half; leaving it null makes the shared
+    # timeline minute helper use Opta's already-normalized EVENT_MINUTE.
+    card_rows["Second"] = np.nan
+    return pd.concat([base, card_rows], ignore_index=True, sort=False)
 
 
 def load_opta_asset_inventory() -> pd.DataFrame:

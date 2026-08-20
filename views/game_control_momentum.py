@@ -23,6 +23,8 @@ if matches.empty:
 match_row = ma.match_selector(matches, key="momentum_match")
 team_name = ma.team_selector_for_match(match_row, key="momentum_team")
 events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), limit=9000)
+fixture_id = data.opta_fixture_id_for_match(match_row)
+events = data.append_opta_card_events(events, fixture_id)
 team_matches = ma.team_match_rows(matches, team_name)
 
 selected = ma.team_match_summary(match_row, team_name)
