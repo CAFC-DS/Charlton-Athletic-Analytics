@@ -392,6 +392,13 @@ def _add_vertical_half_pitch_shapes(fig: go.Figure) -> None:
 
 
 def _normalise_shots_to_top_goal(shots: pd.DataFrame) -> pd.DataFrame:
+    """Rotate attacking-right coordinates into a goal-at-top view.
+
+    Impect's adjusted coordinates already rotate each team and period so the
+    attacking goal is at +X. When that frame is turned 90 degrees for a
+    vertical half-pitch, attacking-left (+Y) must become screen-left (-X).
+    ``direction`` remains as a fallback for any unadjusted rows.
+    """
     out = shots.copy()
     start_x = pd.to_numeric(out["Start X"], errors="coerce")
     start_y = pd.to_numeric(out["Start Y"], errors="coerce")
@@ -399,9 +406,9 @@ def _normalise_shots_to_top_goal(shots: pd.DataFrame) -> pd.DataFrame:
     end_y = pd.to_numeric(out["End Y"], errors="coerce") if "End Y" in out else pd.Series(np.nan, index=out.index)
     target_x = end_x.where(end_x.notna(), start_x)
     direction = pd.Series(np.where(target_x < 0, -1.0, 1.0), index=out.index)
-    out["_Half X"] = (start_y * direction).clip(PITCH_Y_MIN, PITCH_Y_MAX)
+    out["_Half X"] = (-start_y * direction).clip(PITCH_Y_MIN, PITCH_Y_MAX)
     out["_Half Y"] = (start_x * direction).clip(0, PITCH_X_MAX)
-    out["_Half End X"] = (end_y * direction).clip(PITCH_Y_MIN, PITCH_Y_MAX)
+    out["_Half End X"] = (-end_y * direction).clip(PITCH_Y_MIN, PITCH_Y_MAX)
     out["_Half End Y"] = (end_x * direction).clip(0, PITCH_X_MAX)
     return out
 
@@ -1776,10 +1783,10 @@ def goalmouth_shot_map(
         return charting.polish_figure(fig, title, height=height)
 
     target = shots.dropna(subset=["Shot Target Y", "Shot Target Z"]).copy()
-    # Impect's targetPoint.y uses the same lateral orientation as adjusted
-    # End Y. Keep the sign so the goal-face view agrees with the half-pitch
-    # endpoint instead of mirroring every target left-to-right.
-    target["_Goalmouth X"] = pd.to_numeric(target["Shot Target Y"], errors="coerce")
+    # targetPoint.y uses the same attacking-right orientation as adjusted End
+    # Y. A shooter's-view goal face therefore uses -Y, matching the vertical
+    # half-pitch rotation above instead of mirroring the target left-to-right.
+    target["_Goalmouth X"] = -pd.to_numeric(target["Shot Target Y"], errors="coerce")
     target["_Goalmouth Z"] = pd.to_numeric(target["Shot Target Z"], errors="coerce")
     target = target.dropna(subset=["_Goalmouth X", "_Goalmouth Z"]).copy()
     if target.empty:
@@ -1865,7 +1872,7 @@ def goalmouth_shot_map(
         )
     fig.update_layout(
         height=height,
-        xaxis_title="<b>Target Width</b>",
+        xaxis_title="<b>Shooter's left - Target Width - Shooter's right</b>",
         yaxis_title="<b>Target Height</b>",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )

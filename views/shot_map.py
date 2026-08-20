@@ -132,6 +132,10 @@ if filtered.empty:
     st.info("No shots match the current filters.")
 else:
     st.plotly_chart(pitch.shot_map_half_pitch(filtered, team_name, f"{team_name}: Shot Map and xG"), width="stretch")
+    st.caption(
+        "Every shot is normalised toward the goal at the top. Chart left and right are the attacker's perspective; "
+        "Impect's adjusted coordinates already account for the team changing ends between halves."
+    )
 
 ma.section_heading("Goalmouth: Where Shots Were Aimed")
 st.caption(
