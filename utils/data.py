@@ -1159,12 +1159,27 @@ def _compute_team_kpis_from_events(
     # single involved player; the IFF guard (matching load_match_events and the
     # other seasons' KPI queries) drops the rare row where it doesn't, avoiding
     # attributing another player's KPI value to this one.
-    columns = ", ".join(
+    json_columns = [
         f'COALESCE(SUM(IFF(TRY_TO_NUMBER(e.EVENT_KPIS[0]:"playerId"::STRING) = e.PLAYER_ID, '
-        f'TRY_TO_NUMBER(e.EVENT_KPIS[0]:"{json_key}"::STRING), NULL)), 0) AS "kpi_{kpi_id}"'
+        f'TRY_TO_DOUBLE(e.EVENT_KPIS[0]:"{json_key}"::STRING), NULL)), 0) AS "kpi_{kpi_id}"'
         for kpi_id, json_key in event_kpi_mappings.items()
         if json_key is not None
-    )
+    ]
+    final_third_columns = [
+        '''COALESCE(SUM(IFF(
+            e.ACTION_TYPE = 'PASS'
+            AND e.END_DETAIL:"pitchPosition"::STRING = 'FINAL_THIRD'
+            AND UPPER(COALESCE(e.RESULT, '')) = 'SUCCESS',
+            1, 0
+        )), 0) AS "kpi_331"''',
+        '''COALESCE(SUM(IFF(
+            e.ACTION_TYPE = 'PASS'
+            AND e.END_DETAIL:"pitchPosition"::STRING = 'FINAL_THIRD'
+            AND UPPER(COALESCE(e.RESULT, '')) <> 'SUCCESS',
+            1, 0
+        )), 0) AS "kpi_392"''',
+    ]
+    columns = ", ".join([*json_columns, *final_third_columns])
     sql = f"""
         SELECT
             e.ITERATION_ID AS "IterationId",
@@ -1173,7 +1188,6 @@ def _compute_team_kpis_from_events(
             {columns}
         FROM {relation("impect_events")} e
         WHERE e.ITERATION_ID IN ({placeholders})
-          AND e.EVENT_KPIS IS NOT NULL
           AND e.SQUAD_ID IS NOT NULL
         GROUP BY e.ITERATION_ID, e.SQUAD_ID
     """
@@ -1205,28 +1219,16 @@ def _compute_team_kpis_from_events(
         iteration_id = row["IterationId"]
         team_id = row["TeamId"]
         matches_played = int(row["Matches Played"])
-        has_positive = False
         for kpi_id in event_kpi_mappings:
             value = row.get(f"kpi_{kpi_id}")
-            if value is not None and pd.notna(value) and float(value) > 0:
-                has_positive = True
-                long_rows.append({
-                    "IterationId": iteration_id,
-                    "TeamId": team_id,
-                    "Matches Played": matches_played,
-                    "KpiId": kpi_id,
-                    "KpiValue": float(value) / max(matches_played, 1),
-                })
-        # Ensure every team appears even if all KPIs are zero.
-        if not has_positive:
-            for kpi_id in event_kpi_mappings:
-                long_rows.append({
-                    "IterationId": iteration_id,
-                    "TeamId": team_id,
-                    "Matches Played": matches_played,
-                    "KpiId": kpi_id,
-                    "KpiValue": 0.0,
-                })
+            numeric_value = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+            long_rows.append({
+                "IterationId": iteration_id,
+                "TeamId": team_id,
+                "Matches Played": matches_played,
+                "KpiId": kpi_id,
+                "KpiValue": float(numeric_value) / max(matches_played, 1) if pd.notna(numeric_value) else 0.0,
+            })
     return pd.DataFrame(long_rows) if long_rows else None
 
 
