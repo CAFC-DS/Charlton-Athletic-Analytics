@@ -21,8 +21,8 @@ TEAM_BADGE_FILES = {
     "blackpool": "Blackpool_FC_logo.svg.png",
     "blackpool fc": "Blackpool_FC_logo.svg.png",
 
-    "bolton": "Bolton_Wanderers_FC_logo.svg.png",
-    "bolton wanderers": "Bolton_Wanderers_FC_logo.svg.png",
+    "bolton": "Bolton_Wanderers_FC_logo.svg.webp",
+    "bolton wanderers": "Bolton_Wanderers_FC_logo.svg.webp",
 
     "bristol": "Bristol.png",
     "bristol city": "Bristol_City_crest.svg.webp",
@@ -31,15 +31,15 @@ TEAM_BADGE_FILES = {
     "bromley": "Bromley_FC_crest.svg.png",
     "bromley fc": "Bromley_FC_crest.svg.png",
 
-    "burnley": "Burnley.jpg",
+    "burnley": "Burnley_FC_Logo.svg.webp",
     "burton": "Burton_Albion_FC_logo.svg.png",
     "burton albion": "Burton_Albion_FC_logo.svg.png",
 
     "cambridge": "Cambridge_United_FC.svg.png",
     "cambridge united": "Cambridge_United_FC.svg.png",
 
-    "cardiff": "Cardiff.png",
-    "cardiff city": "Cardiff.png",
+    "cardiff": "Cardiff_City_crest.svg",
+    "cardiff city": "Cardiff_City_crest.svg",
 
     "charlton": "Charlton Logo.png",
     "charlton athletic": "Charlton Logo.png",
@@ -147,8 +147,15 @@ TEAM_BADGE_FILES = {
     "west brom": "West_Bromwich_Albion.svg.png",
     "west bromwich albion": "West_Bromwich_Albion.svg.png",
 
+    "west ham": "West_Ham_United_FC_logo.svg",
+    "west ham united": "West_Ham_United_FC_logo.svg",
+
     "wigan": "Wigan_Athletic.svg.png",
     "wigan athletic": "Wigan_Athletic.svg.png",
+
+    "wolverhampton": "Wolverhampton_Wanderers_FC_crest.svg.webp",
+    "wolverhampton wanderers": "Wolverhampton_Wanderers_FC_crest.svg.webp",
+    "wolves": "Wolverhampton_Wanderers_FC_crest.svg.webp",
 
     "wrexham": "Wrexham_A.F.C._Logo.svg.png",
     "afc wrexham": "Wrexham_A.F.C._Logo.svg.png",
