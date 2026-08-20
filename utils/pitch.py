@@ -406,6 +406,20 @@ def _normalise_shots_to_top_goal(shots: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _shot_goal_label_positions(group: pd.DataFrame) -> list[str]:
+    """Place goal labels beside their marker instead of underneath the goal."""
+    positions: list[str] = []
+    for _, row in group.iterrows():
+        half_x = _finite(row.get("_Half X"), 0.0)
+        if half_x > 1.0:
+            positions.append("middle left")
+        elif half_x < -1.0:
+            positions.append("middle right")
+        else:
+            positions.append("top center")
+    return positions
+
+
 def _shot_type_label(body_part: object, action: object = None) -> str:
     text = f"{_safe_text(body_part)} {_safe_text(action)}".upper()
     if "HEAD" in text:
@@ -1273,8 +1287,12 @@ def shot_map_half_pitch(events: pd.DataFrame, team: str | None, title: str) -> g
                 mode="markers+text",
                 name=outcome,
                 text=group["Label"],
-                textposition="bottom center",
-                textfont=dict(size=11, color=DARK),
+                textposition=(
+                    _shot_goal_label_positions(group)
+                    if outcome == "Goal"
+                    else ["top center"] * len(group)
+                ),
+                textfont=dict(size=10, color=DARK),
                 marker=dict(
                     size=10 + (group["Shot xG"] / max_xg) * 24,
                     symbol=group["Shot Symbol"],
@@ -1758,7 +1776,10 @@ def goalmouth_shot_map(
         return charting.polish_figure(fig, title, height=height)
 
     target = shots.dropna(subset=["Shot Target Y", "Shot Target Z"]).copy()
-    target["_Goalmouth X"] = -pd.to_numeric(target["Shot Target Y"], errors="coerce")
+    # Impect's targetPoint.y uses the same lateral orientation as adjusted
+    # End Y. Keep the sign so the goal-face view agrees with the half-pitch
+    # endpoint instead of mirroring every target left-to-right.
+    target["_Goalmouth X"] = pd.to_numeric(target["Shot Target Y"], errors="coerce")
     target["_Goalmouth Z"] = pd.to_numeric(target["Shot Target Z"], errors="coerce")
     target = target.dropna(subset=["_Goalmouth X", "_Goalmouth Z"]).copy()
     if target.empty:
@@ -1820,7 +1841,7 @@ def goalmouth_shot_map(
                 x=rows["_Goalmouth X"],
                 y=rows["_Goalmouth Z"],
                 mode="markers",
-                name=group,
+                name=charting.wrap_label(group, width=18, max_lines=2),
                 cliponaxis=False,
                 marker=dict(
                     size=12 + (rows["_Size Value"] / max_size_value) * 28,
@@ -1850,7 +1871,20 @@ def goalmouth_shot_map(
     )
     fig.update_xaxes(range=[x_min, x_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
     fig.update_yaxes(range=[y_min, y_max], zeroline=False, tickformat=".1f", showgrid=False, fixedrange=True)
-    return charting.polish_figure(fig, title)
+    fig = charting.polish_figure(fig, title)
+    if group_col == "Player" and len(ordered_groups) > 4:
+        fig.update_layout(
+            margin=dict(l=28, r=180, t=96, b=54),
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.02,
+                font=dict(size=10),
+            ),
+        )
+    return fig
 
 
 def expected_threat_timeline(events: pd.DataFrame, title: str) -> go.Figure:
