@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import re
 from textwrap import dedent
 
 import numpy as np
@@ -530,7 +531,70 @@ def _has_label(series: pd.Series) -> pd.Series:
     return series.notna() & ~text.isin(["", "NONE", "NAN", "NULL", "FALSE", "0"])
 
 
-def _overview_stats(row: pd.Series, events: pd.DataFrame) -> pd.DataFrame:
+def _normalise_team_name(value: object) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _same_team_name(candidate: object, target: object) -> bool:
+    candidate_key = _normalise_team_name(candidate)
+    target_key = _normalise_team_name(target)
+    if not candidate_key or not target_key:
+        return False
+    return candidate_key == target_key or candidate_key in target_key or target_key in candidate_key
+
+
+def _opta_fixture_id(row: pd.Series) -> object | None:
+    """Resolve the matching DVMS/Opta fixture for an Impect match row."""
+    match_date = pd.to_datetime(row.get("Date"), errors="coerce")
+    if pd.isna(match_date):
+        return None
+    try:
+        optas = data.load_opta_fixtures(season=str(row.get("Season", "")))
+    except Exception:
+        return None
+    if optas.empty or "FixtureId" not in optas:
+        return None
+
+    opta_dates = pd.to_datetime(optas.get("Date"), errors="coerce")
+    date_key = match_date.strftime("%Y-%m-%d")
+    date_mask = opta_dates.dt.strftime("%Y-%m-%d").eq(date_key)
+    home = row.get("Home")
+    away = row.get("Away")
+    home_match = optas.get("Home", pd.Series(index=optas.index, dtype=object)).map(
+        lambda value: _same_team_name(value, home)
+    )
+    away_match = optas.get("Away", pd.Series(index=optas.index, dtype=object)).map(
+        lambda value: _same_team_name(value, away)
+    )
+    swapped_home_match = optas.get("Home", pd.Series(index=optas.index, dtype=object)).map(
+        lambda value: _same_team_name(value, away)
+    )
+    swapped_away_match = optas.get("Away", pd.Series(index=optas.index, dtype=object)).map(
+        lambda value: _same_team_name(value, home)
+    )
+    matching = optas[date_mask & ((home_match & away_match) | (swapped_home_match & swapped_away_match))]
+    if matching.empty:
+        return None
+    fixture_id = matching.iloc[0].get("FixtureId")
+    return None if pd.isna(fixture_id) else fixture_id
+
+
+def _load_match_possession(row: pd.Series) -> tuple[object | None, pd.DataFrame]:
+    fixture_id = _opta_fixture_id(row)
+    empty = pd.DataFrame(columns=getattr(data, "TRACKING_POSSESSION_COLUMNS", []))
+    if fixture_id is None:
+        return None, empty
+    try:
+        return fixture_id, data.load_fixture_effective_possession(fixture_id)
+    except Exception:
+        return fixture_id, empty
+
+
+def _overview_stats(
+    row: pd.Series,
+    events: pd.DataFrame,
+    possession: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     home = str(row.get("Home", "Home"))
     away = str(row.get("Away", "Away"))
     teams = [home, away]
@@ -547,6 +611,14 @@ def _overview_stats(row: pd.Series, events: pd.DataFrame) -> pd.DataFrame:
         rows.append({"Stat": label, "Home": home_value, "Away": away_value, "Type": value_type})
 
     add("Goals", row.get("Home Goals"), row.get("Away Goals"), show_zero=True)
+
+    possession = possession if possession is not None else pd.DataFrame()
+    if not possession.empty:
+        possession_row = possession.iloc[0]
+        home_possession = possession_row.get("Home Possession %")
+        away_possession = possession_row.get("Away Possession %")
+        if pd.notna(home_possession) and pd.notna(away_possession):
+            add("Possession", home_possession, away_possession, "percent", show_zero=True)
 
     if events.empty:
         return pd.DataFrame(rows)
@@ -566,39 +638,17 @@ def _overview_stats(row: pd.Series, events: pd.DataFrame) -> pd.DataFrame:
     home_completed = int(home_passes["_Completed"].sum()) if "_Completed" in home_passes else 0
     away_completed = int(away_passes["_Completed"].sum()) if "_Completed" in away_passes else 0
 
-    # Add Possession %
-    fixture_id = None
-    try:
-        match_date = pd.to_datetime(row.get("Date"), errors="coerce")
-        if pd.notna(match_date):
-            season = str(row.get("Season"))
-            optas = data.load_opta_fixtures(season=season)
-            optas["_Date"] = pd.to_datetime(optas["Date"], errors="coerce")
-            mask = (optas["_Date"] == match_date) & (
-                (optas["Home"].str.contains(home, case=False, na=False) | optas["Away"].str.contains(home, case=False, na=False)) &
-                (optas["Home"].str.contains(away, case=False, na=False) | optas["Away"].str.contains(away, case=False, na=False))
-            )
-            matching = optas[mask]
-            if not matching.empty:
-                fixture_id = matching.iloc[0]["FixtureId"]
-    except Exception:
-        pass
-
-    if fixture_id:
-        try:
-            possession_df = data.load_fixture_effective_possession(fixture_id)
-            if not possession_df.empty:
-                home_poss = possession_df.iloc[0].get("Home Possession %")
-                away_poss = possession_df.iloc[0].get("Away Possession %")
-                if home_poss is not None and away_poss is not None:
-                    add("Possession", home_poss, away_poss, "percent", show_zero=True)
-        except Exception:
-            pass
-    elif not team_passes[home].empty or not team_passes[away].empty:
-        # Fallback to pass-based possession if Opta isn't available
+    if possession.empty and (not team_passes[home].empty or not team_passes[away].empty):
+        # Fallback only when the provider-delivered possession summary is unavailable.
         total_p = len(home_passes) + len(away_passes)
         if total_p > 0:
-            add("Possession (Pass %)", (len(home_passes) / total_p * 100), (len(away_passes) / total_p * 100), "percent", show_zero=True)
+            add(
+                "Possession (Pass Share Proxy)",
+                (len(home_passes) / total_p * 100),
+                (len(away_passes) / total_p * 100),
+                "percent",
+                show_zero=True,
+            )
 
     add("Passes", len(home_passes), len(away_passes), show_zero=True)
     add("Accurate Passes", home_completed, away_completed)
@@ -792,7 +842,7 @@ def _render_quick_links() -> None:
         st.page_link("views/event_data_table.py", label="Event Table")
 
 
-def _render_data_note(row: pd.Series, events: pd.DataFrame) -> None:
+def _render_data_note(row: pd.Series, events: pd.DataFrame, possession: pd.DataFrame) -> None:
     notes = []
     if not bool(row.get("Venue Verified", True)):
         notes.append(
@@ -802,9 +852,13 @@ def _render_data_note(row: pd.Series, events: pd.DataFrame) -> None:
         notes.append(
             "Event-level facts such as xG, shots and pass accuracy are not available for this fixture, so only the score and match metadata can be shown."
         )
+    if possession.empty:
+        notes.append(
+            "Provider-delivered possession is unavailable for this fixture. Any possession row shown is explicitly labelled as a pass-share proxy; Event Rows is an Impect coverage fact."
+        )
     else:
         notes.append(
-            "Official possession is not available in the connected Impect tables, so Team Stats does not show possession. Event-row coverage is shown only as the Event Rows match fact."
+            "Possession uses the provider-delivered physical summary attached to the matching DVMS/Opta fixture (Second Spectrum effective playing time), not an Impect pass-count proxy."
         )
     if notes:
         _html(f'<div class="mo-note">{" ".join(ui.esc(note) for note in notes)}</div>')
@@ -1342,7 +1396,7 @@ def _render_shot_type_key() -> None:
 ma.page_header(
     "Match Overview",
     "A match-centre view for the selected fixture: scoreline, match facts, mirrored team stats and quick links into deeper match analysis.",
-    "Match metadata comes from typed CAFC_DB Impect dimensions. Stats are calculated from provider events where selected-match rows are available.",
+    "Match metadata and event stats use CAFC_DB Impect data. Possession uses the provider physical-summary asset attached to the matching DVMS/Opta fixture.",
 )
 _overview_css()
 
@@ -1363,12 +1417,13 @@ except Exception as exc:
 
 home_team = str(match_row.get("Home", "Home"))
 away_team = str(match_row.get("Away", "Away"))
-stats = _overview_stats(match_row, events)
+fixture_id, possession = _load_match_possession(match_row)
+stats = _overview_stats(match_row, events, possession)
 shots = _shot_events(events)
 
 ma.section_heading("Match Centre")
 _render_scorecard(match_row, stats, events)
-_render_data_note(match_row, events)
+_render_data_note(match_row, events, possession)
 
 ma.section_heading("Match Facts")
 _render_facts(match_row, events, stats)
@@ -1377,22 +1432,6 @@ ma.section_heading("Team Stats")
 _render_stat_comparison(stats, home_team, away_team)
 
 if not events.empty:
-    fixture_id = None
-    try:
-        match_date = pd.to_datetime(match_row.get("Date"), errors="coerce")
-        if pd.notna(match_date):
-            optas = data.load_opta_fixtures(season=season)
-            optas["_Date"] = pd.to_datetime(optas["Date"], errors="coerce")
-            mask = (optas["_Date"] == match_date) & (
-                (optas["Home"].str.contains(home_team, case=False, na=False) | optas["Away"].str.contains(home_team, case=False, na=False)) &
-                (optas["Home"].str.contains(away_team, case=False, na=False) | optas["Away"].str.contains(away_team, case=False, na=False))
-            )
-            matching = optas[mask]
-            if not matching.empty:
-                fixture_id = matching.iloc[0]["FixtureId"]
-    except Exception:
-        pass
-
     if fixture_id:
         ma.section_heading("Official Tactical Map")
         st.caption("Official tactical positions from Opta F7 starting lineups.")
