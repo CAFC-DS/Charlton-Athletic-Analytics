@@ -796,14 +796,7 @@ def get_connection():
             "inside its quotes."
         ) from secrets_error
     if not snowflake_secrets:
-        raise RuntimeError(
-            "No Snowflake credentials found, so the app has nothing to connect "
-            "with. They belong under a [connections.snowflake] heading -- in "
-            ".streamlit/secrets.toml locally, or in Manage app -> Settings -> "
-            "Secrets on Streamlit Community Cloud. Run "
-            "tools/make_cloud_secrets.py to generate the block to paste there. "
-            f"Right now {_secrets_outline()}."
-        )
+        return None
 
     kwargs = _connector_kwargs(snowflake_secrets)
     if heading == "[connections.snowflake]":
@@ -838,6 +831,13 @@ def data_source_preflight() -> pd.DataFrame:
     }
     frames: list[dict[str, object]] = []
     conn = get_connection()
+    if conn is None:
+        return pd.DataFrame(
+            [
+                {"Capability": capability, "Available": False, "Source": source_key}
+                for capability, source_key in checks.items()
+            ]
+        )
     for capability, source_key in checks.items():
         try:
             if source_key == "opta_events_staging":
@@ -926,6 +926,8 @@ def _league_contexts() -> pd.DataFrame:
         )
 
     conn = get_connection()
+    if conn is None:
+        return pd.DataFrame(columns=columns)
     squad_iterations = conn.query(
         f"""
         SELECT DISTINCT ITERATION_ID AS "IterationId"
@@ -1402,7 +1404,14 @@ def list_seasons() -> dict[str, list[str]]:
     if USE_MOCK_DATA:
         return {"players": ["2025/26"], "teams": ["2025/26"], "matches": ["2025/26"]}
 
-    contexts = _league_contexts()
+    try:
+        contexts = _league_contexts()
+    except RuntimeError as exc:
+        message = str(exc)
+        if "No Snowflake credentials found" in message or "secrets could not be read" in message:
+            return {"players": [], "teams": [], "matches": []}
+        raise
+
     if contexts.empty:
         return {"players": [], "teams": [], "matches": []}
 
