@@ -8,5 +8,5 @@ numpy==2.5.0
 plotly==6.8.0
 snowflake-snowpark-python==1.52.0
 snowflake-connector-python==4.6.0
-cryptography
-python-pptx
+cryptography==49.0.0
+python-pptx==1.0.2

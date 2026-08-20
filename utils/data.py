@@ -600,6 +600,103 @@ DEFENSIVE_PLAYER_MATCH_COLUMNS = [
 
 
 # ---- SNOWFLAKE CONNECTION ----------------------------------------------------
+# Settings that identify a Snowflake connection, used to recognise credentials
+# pasted at the top level of a secrets file with no heading above them.
+_SNOWFLAKE_SETTINGS = frozenset(
+    {
+        "account",
+        "user",
+        "password",
+        "role",
+        "warehouse",
+        "database",
+        "schema",
+        "authenticator",
+        "private_key",
+        "private_key_file",
+        "private_key_file_pwd",
+        "private_key_base64",
+    }
+)
+
+
+def _running_in_snowflake() -> bool:
+    """Whether this is Streamlit-in-Snowflake, which authenticates itself."""
+    try:
+        from snowflake.snowpark._internal.utils import is_in_stored_procedure
+
+        return bool(is_in_stored_procedure())
+    except ImportError:
+        return False
+
+
+def _snowflake_secrets() -> tuple[dict, str, Exception | None]:
+    """Find the Snowflake settings in st.secrets.
+
+    Returns the settings, the heading they came from, and any error raised
+    while reading secrets. The error is returned rather than swallowed: a
+    secrets file that exists but does not parse raises the same exception type
+    as one that is absent, and silently treating a broken file as an absent one
+    turns a one-line TOML mistake into a bare "missing configuration" failure.
+
+    [connections.snowflake] is the heading st.connection reads by itself. The
+    other two shapes are accepted because they are what a secrets box invites
+    you to paste, and ignoring them costs a deploy cycle to diagnose.
+    """
+    try:
+        secrets = st.secrets
+        connections = secrets.get("connections", {})
+        if connections.get("snowflake"):
+            return dict(connections["snowflake"]), "[connections.snowflake]", None
+        if secrets.get("snowflake"):
+            return dict(secrets["snowflake"]), "[snowflake]", None
+        loose = {key: secrets[key] for key in secrets if key in _SNOWFLAKE_SETTINGS}
+        if {"account", "user"} <= set(loose):
+            return loose, "the top level (no heading)", None
+        return {}, "", None
+    except Exception as exc:
+        return {}, "", exc
+
+
+def _secrets_file_exists() -> bool:
+    """Whether Streamlit can see a secrets file at any of the paths it reads.
+
+    Separates a deployment that was never given secrets from one whose secrets
+    are present but unreadable -- both raise the same exception on access, and
+    they need opposite fixes.
+    """
+    from streamlit import config
+
+    try:
+        paths = config.get_option("secrets.files") or []
+    except Exception:
+        return False
+    return any(os.path.exists(os.path.expanduser(str(path))) for path in paths)
+
+
+def _secrets_outline() -> str:
+    """The names of what is in st.secrets, for diagnosing a wrong heading.
+
+    Names only -- no values are read, so nothing secret can be printed.
+    """
+    try:
+        names = sorted(st.secrets.keys())
+    except Exception:
+        if not _secrets_file_exists():
+            return "there is no secrets file at all"
+        return "no secrets could be read at all"
+    if not names:
+        return "the secrets are empty"
+    detail = ", ".join(names)
+    try:
+        nested = sorted(st.secrets["connections"].keys())
+        if nested:
+            detail += f" (with connections: {', '.join(nested)})"
+    except Exception:
+        pass
+    return f"the secrets contain: {detail}"
+
+
 def _inline_private_key_der(pem_base64: str, password: str | None) -> bytes:
     """Decode a base64-wrapped PEM private key into DER bytes.
 
@@ -608,12 +705,28 @@ def _inline_private_key_der(pem_base64: str, password: str | None) -> bytes:
     a file path.
     """
     import base64
+    import binascii
 
     from cryptography.hazmat.primitives import serialization
 
-    pem_bytes = base64.b64decode(pem_base64)
+    try:
+        pem_bytes = base64.b64decode("".join(pem_base64.split()), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise RuntimeError(
+            "private_key_base64 is not valid base64. Paste the whole string on a "
+            "single line -- a wrapped paste loses characters."
+        ) from exc
+
     password_bytes = password.encode() if password else None
-    private_key = serialization.load_pem_private_key(pem_bytes, password=password_bytes)
+    try:
+        private_key = serialization.load_pem_private_key(pem_bytes, password=password_bytes)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "private_key_base64 decoded, but the PEM key inside it could not be "
+            "loaded. An encrypted key needs its passphrase in private_key_file_pwd; "
+            "an unencrypted one needs that setting removed."
+        ) from exc
+
     return private_key.private_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PrivateFormat.PKCS8,
@@ -621,30 +734,87 @@ def _inline_private_key_der(pem_base64: str, password: str | None) -> bytes:
     )
 
 
+def _connector_kwargs(snowflake_secrets: dict) -> dict:
+    """Turn a Snowflake secrets section into Snowflake connector arguments.
+
+    Locally, private_key_file points at a .p8 key on disk. That key is
+    gitignored, so a deployment target with no filesystem for it -- Streamlit
+    Community Cloud -- supplies the same key inline instead, as
+    private_key_base64 (base64 of the PEM), decoded to DER here.
+
+    The connector reads private_key_file in preference to private_key whenever
+    it is set, so a secrets block copied from a local machine would still point
+    at the missing .p8 and never reach the inline key. Both file settings are
+    therefore blanked out alongside the decoded key.
+    """
+    kwargs = {key: value for key, value in snowflake_secrets.items() if key != "private_key_base64"}
+    inline_key = snowflake_secrets.get("private_key_base64")
+    if inline_key:
+        kwargs["private_key"] = _inline_private_key_der(
+            inline_key, snowflake_secrets.get("private_key_file_pwd")
+        )
+        kwargs["private_key_file"] = None
+        kwargs["private_key_file_pwd"] = None
+        return kwargs
+
+    key_file = snowflake_secrets.get("private_key_file")
+    if key_file and not os.path.exists(os.path.expanduser(str(key_file))):
+        raise RuntimeError(
+            f"Snowflake key-pair auth points private_key_file at {key_file!r}, but "
+            "no such file exists here. The .p8 key is gitignored and never ships "
+            "with the repo, so a deployment target without it (e.g. Streamlit "
+            "Community Cloud) must drop private_key_file from its secrets and set "
+            "private_key_base64 -- the base64 of that PEM key, on one line -- "
+            "keeping private_key_file_pwd if the key is encrypted. Run "
+            "tools/make_cloud_secrets.py to generate that block."
+        )
+    return kwargs
+
+
 def get_connection():
     """Streamlit's built-in Snowflake connection.
 
-    Reads its settings from .streamlit/secrets.toml under [connections.snowflake].
+    Reads its settings from .streamlit/secrets.toml under [connections.snowflake],
+    or from the deployment's secrets box, which holds the same TOML.
     st.connection caches the connection, so this is cheap to call repeatedly.
 
-    Streamlit-in-Snowflake never has a secrets.toml (it uses the native
-    session instead), and merely touching st.secrets there raises
-    StreamlitSecretNotFoundError -- so that lookup is caught, not just
-    guarded with hasattr. Outside it (local dev, Streamlit Community
-    Cloud), [connections.snowflake] normally points private_key_file at a
-    .p8 file on disk. When that file isn't available -- a secrets-only
-    deployment target -- a base64-encoded PEM key can be supplied instead
-    under private_key_base64, decoded here and passed straight through.
+    Streamlit-in-Snowflake has no secrets at all -- it authenticates through the
+    native session -- so there st.connection is left to its own devices.
     """
-    try:
-        snowflake_secrets = dict(st.secrets.get("connections", {}).get("snowflake", {}))
-    except Exception:
-        snowflake_secrets = {}
-    inline_key = snowflake_secrets.get("private_key_base64")
-    if inline_key:
-        der_key = _inline_private_key_der(inline_key, snowflake_secrets.get("private_key_file_pwd"))
-        return st.connection("snowflake", private_key=der_key)
-    return st.connection("snowflake")
+    if _running_in_snowflake():
+        return st.connection("snowflake")
+
+    snowflake_secrets, heading, secrets_error = _snowflake_secrets()
+    if secrets_error is not None and _secrets_file_exists():
+        # Secrets are there but unreadable: almost always a TOML mistake in a
+        # pasted secrets box, most often a private_key_base64 that wrapped onto
+        # a second line. The underlying message names the line, so it leads
+        # here. Secrets that are simply absent fall through to the next case.
+        raise RuntimeError(
+            f"The secrets could not be read: {secrets_error} Check the TOML, in "
+            "particular that private_key_base64 sits on a single unbroken line "
+            "inside its quotes."
+        ) from secrets_error
+    if not snowflake_secrets:
+        raise RuntimeError(
+            "No Snowflake credentials found, so the app has nothing to connect "
+            "with. They belong under a [connections.snowflake] heading -- in "
+            ".streamlit/secrets.toml locally, or in Manage app -> Settings -> "
+            "Secrets on Streamlit Community Cloud. Run "
+            "tools/make_cloud_secrets.py to generate the block to paste there. "
+            f"Right now {_secrets_outline()}."
+        )
+
+    kwargs = _connector_kwargs(snowflake_secrets)
+    if heading == "[connections.snowflake]":
+        return st.connection("snowflake", **kwargs)
+
+    # st.connection merges [connections.snowflake] into the connector's
+    # arguments itself, and when that section is empty it ignores the arguments
+    # passed here rather than falling back to them -- but only for a connection
+    # named "snowflake". Settings recovered from any other heading therefore
+    # have to travel under a different name to be used at all.
+    return st.connection("charlton_snowflake", type="snowflake", **kwargs)
 
 
 def data_source_preflight() -> pd.DataFrame:

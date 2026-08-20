@@ -1,5 +1,6 @@
 # Secrets — never commit these
 .streamlit/secrets.toml
+.streamlit/cloud_secrets.toml
 .streamlit/rsa_key.p8
 .streamlit/rsa_key.pub
 key_b64.txt
