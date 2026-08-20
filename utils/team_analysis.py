@@ -1,3 +1,4 @@
+import base64
 import re
 
 import numpy as np
@@ -951,6 +952,51 @@ def cluster_passing_profiles(teams: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _cluster_badge_sprite(rows: pd.DataFrame, selected: str | None) -> str | None:
+    """Build one transparent SVG sprite so a cluster legend item controls its badges."""
+    canvas_min = -6.0
+    canvas_max = 111.0
+    pixels_per_unit = 10.0
+    canvas_size = int((canvas_max - canvas_min) * pixels_per_unit)
+    elements: list[str] = []
+
+    for _, row in rows.iterrows():
+        badge_uri = team_badges.badge_data_uri(row["Team"])
+        if not badge_uri:
+            continue
+
+        x_value = float(row["Pass Security Percentile"])
+        y_value = float(row["Progression Percentile"])
+        badge_scale = 1.35 if str(row["Team"]) == str(selected) else 1.0
+        badge_width = 4.5 * badge_scale * pixels_per_unit
+        badge_height = 7.0 * badge_scale * pixels_per_unit
+        x_position = (x_value - canvas_min) * pixels_per_unit - badge_width / 2
+        # Image traces use a normal Cartesian y-axis here, so SVG's top-down
+        # coordinate system is inverted when the sprite is assembled.
+        y_position = (canvas_max - y_value) * pixels_per_unit - badge_height / 2
+        elements.append(
+            f'<image xlink:href="{badge_uri}" x="{x_position:.2f}" y="{y_position:.2f}" '
+            f'width="{badge_width:.2f}" height="{badge_height:.2f}" preserveAspectRatio="xMidYMid meet"/>'
+        )
+        if str(row["Team"]) == str(selected):
+            radius = max(badge_width, badge_height) / 2 + 4
+            elements.append(
+                f'<circle cx="{(x_value - canvas_min) * pixels_per_unit:.2f}" '
+                f'cy="{(canvas_max - y_value) * pixels_per_unit:.2f}" r="{radius:.2f}" '
+                'fill="none" stroke="#c30017" stroke-width="3"/>'
+            )
+
+    if not elements:
+        return None
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+        f'width="{canvas_size}" height="{canvas_size}" viewBox="0 0 {canvas_size} {canvas_size}">'
+        f'{"".join(elements)}</svg>'
+    )
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
 def cluster_chart(clustered: pd.DataFrame, selected: str | None) -> go.Figure:
     clustered = clustered.copy()
     clustered["Pass Security Percentile"] = pd.to_numeric(clustered["Pass Security Percentile"], errors="coerce")
@@ -958,79 +1004,63 @@ def cluster_chart(clustered: pd.DataFrame, selected: str | None) -> go.Figure:
     clustered = clustered.dropna(subset=["Pass Security Percentile", "Progression Percentile"]).reset_index(drop=True)
     selected_mask = clustered["Team"].astype(str).eq(str(selected))
     clustered["_Selected Size"] = np.where(selected_mask, 18, 11)
-    clustered["_Text"] = clustered["Team"].apply(lambda value: charting.wrap_label(value, width=16, max_lines=2))
-    clustered.loc[selected_mask, "_Text"] = clustered.loc[selected_mask, "_Text"].map(lambda value: f"<b>{value}</b>")
-
-    clustered["_Text Position"] = "top center"
-    upper_positions = ["bottom center", "middle right", "middle left", "top center"]
-    lower_positions = ["top center", "middle right", "middle left", "bottom center"]
-    for cluster_name, group in clustered.groupby("Cluster", sort=False):
-        positions = upper_positions if "Progressor" in str(cluster_name) else lower_positions
-        ordered_indices = group.sort_values(["Progression Percentile", "Pass Security Percentile"]).index.tolist()
-        for index, row_index in enumerate(ordered_indices):
-            clustered.loc[row_index, "_Text Position"] = positions[index % len(positions)]
 
     fig = px.scatter(
         clustered,
         x="Pass Security Percentile",
         y="Progression Percentile",
         color="Cluster",
-        text="_Text",
         size="_Selected Size",
         size_max=18,
         custom_data=["Team", "Cluster"],
     )
     fig.add_hline(y=55, line_dash="dash", line_color=LIGHT_GREY)
     fig.add_vline(x=55, line_dash="dash", line_color=LIGHT_GREY)
-    text_position_lookup = clustered.set_index("Team")["_Text Position"].to_dict()
     for trace in fig.data:
-        trace_teams = [str(row[0]) for row in trace.customdata]
-        trace.textposition = [text_position_lookup.get(team, "top center") for team in trace_teams]
-        trace.textfont = dict(size=9, color=DARK)
+        trace.showlegend = False
         trace.hovertemplate = (
             "<b>%{customdata[0]}</b><br>%{customdata[1]}"
             "<br>Pass security: %{x:.0f}/100"
             "<br>Progression: %{y:.0f}/100<extra></extra>"
         )
-        trace.marker.update(line=dict(width=1.2, color="#ffffff"), opacity=0.9)
-
-    badge_width = 4.5
-    badge_height = 7.0
-    for _, row in clustered.iterrows():
-        badge_uri = team_badges.badge_data_uri(row["Team"])
-        if not badge_uri:
-            continue
-        badge_scale = 1.35 if str(row["Team"]) == str(selected) else 1.0
-        fig.add_layout_image(
-            dict(
-                source=badge_uri,
-                x=row["Pass Security Percentile"],
-                y=row["Progression Percentile"],
-                xref="x",
-                yref="y",
-                xanchor="center",
-                yanchor="middle",
-                sizex=badge_width * badge_scale,
-                sizey=badge_height * badge_scale,
-                sizing="contain",
-                layer="above",
-            )
+        trace.marker.update(
+            color="rgba(0,0,0,0)",
+            line=dict(width=0, color="rgba(0,0,0,0)"),
+            opacity=0,
         )
 
-    selected_row = clustered[selected_mask]
-    if not selected_row.empty:
+    cluster_order = [
+        "Controlled Progressors",
+        "Direct Progressors",
+        "Secure Circulators",
+        "Lower Volume",
+    ]
+    cluster_order.extend(
+        cluster_name
+        for cluster_name in clustered["Cluster"].astype(str).drop_duplicates().tolist()
+        if cluster_name not in cluster_order
+    )
+    for legend_rank, cluster_name in enumerate(cluster_order):
+        cluster_rows = clustered[clustered["Cluster"].astype(str).eq(cluster_name)]
+        if cluster_rows.empty:
+            continue
+        sprite = _cluster_badge_sprite(cluster_rows, selected)
+        if not sprite:
+            continue
         fig.add_trace(
-            go.Scatter(
-                x=selected_row["Pass Security Percentile"],
-                y=selected_row["Progression Percentile"],
-                mode="markers",
-                marker=dict(size=27, color="rgba(255,255,255,0)", line=dict(width=3, color=RED)),
+            go.Image(
+                source=sprite,
+                x0=52.5,
+                dx=117,
+                y0=52.5,
+                dy=117,
+                name=cluster_name,
+                legendrank=legend_rank,
                 hoverinfo="skip",
-                showlegend=False,
             )
         )
 
     fig.update_layout(height=620, showlegend=True, hovermode="closest", hoverdistance=12)
-    fig.update_xaxes(tickformat=".0f", range=[0, 105])
-    fig.update_yaxes(tickformat=".0f", range=[0, 105])
+    fig.update_xaxes(tickformat=".0f", range=[0, 105], autorange=False)
+    fig.update_yaxes(tickformat=".0f", range=[0, 105], autorange=False, scaleanchor=False)
     return polish_figure(fig, "Pass profile clusters")

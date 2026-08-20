@@ -95,7 +95,14 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         title=dict(text=f"League Passing Identity Map — {selected} highlighted", x=0.01, xanchor="left"),
         height=680,
         margin=dict(l=62, r=42, t=86, b=94),
-        legend=dict(orientation="h", yanchor="top", y=-0.14, xanchor="left", x=0, title_text="Identity"),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.14,
+            xanchor="left",
+            x=0,
+            title_text="Identity (click to show/hide badges)",
+        ),
     )
     fig.update_xaxes(title="Pass Security Percentile - completion and ball retention proxy")
     fig.update_yaxes(title="Progression Percentile - final-third access and opponents bypassed")
