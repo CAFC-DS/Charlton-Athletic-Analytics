@@ -22,14 +22,14 @@ TEAM_BADGE_FILES = {
     "birmingham": "Birmingham-City.png",
     "blackburn": "Blackburn_Rovers.svg.png",
     "blackpool": "Blackpool_FC_logo.svg.png",
-    "bolton": "Bolton_Wanderers_FC_logo.svg.png",
+    "bolton": "Bolton_Wanderers_FC_logo.svg.webp",
     "bristol city": "Bristol_City_crest.svg.webp",
     "bristol rovers": "Bristol_Rovers_F.C._logo.svg.png",
     "bromley": "Bromley_FC_crest.svg.png",
-    "burnley": "Burnley.jpg",
+    "burnley": "Burnley_FC_Logo.svg.webp",
     "burton": "Burton_Albion_FC_logo.svg.png",
     "cambridge": "Cambridge_United_FC.svg.png",
-    "cardiff": "Cardiff.png",
+    "cardiff": "Cardiff_City_crest.svg",
     "charlton": "Charlton Logo.png",
     "chelsea": "Chelsea_FC.svg.png",
     "coventry": "Coventry_City_FC_crest.svg.png",
@@ -68,7 +68,12 @@ TEAM_BADGE_FILES = {
     "watford": "Watford.svg.png",
     "west brom": "West_Bromwich_Albion.svg.png",
     "west bromwich albion": "West_Bromwich_Albion.svg.png",
+    "west ham": "West_Ham_United_FC_logo.svg",
+    "west ham united": "West_Ham_United_FC_logo.svg",
     "wigan": "Wigan_Athletic.svg.png",
+    "wolverhampton": "Wolverhampton_Wanderers_FC_crest.svg.webp",
+    "wolverhampton wanderers": "Wolverhampton_Wanderers_FC_crest.svg.webp",
+    "wolves": "Wolverhampton_Wanderers_FC_crest.svg.webp",
     "wrexham": "Wrexham_A.F.C._Logo.svg.png",
     "wycombe": "Wycombe_Wanderers_FC_logo.svg.png",
 }
@@ -118,20 +123,23 @@ def _inject_css() -> None:
         }
         .to-team-block { align-items: center; display: flex; gap: 18px; min-width: 0; }
         .to-badge {
+            display: inline-grid;
+            filter: drop-shadow(0 10px 16px rgba(0,0,0,.32));
+            flex: 0 0 auto;
+            height: 96px;
+            object-fit: contain;
+            place-items: center;
+            width: 96px;
+        }
+        .to-badge-fallback {
             background: #fff;
             border: 1px solid rgba(255,255,255,.32);
             border-radius: 50%;
             box-shadow: 0 14px 22px rgba(0,0,0,.28);
             color: var(--ss-accent);
-            display: inline-grid;
-            flex: 0 0 auto;
             font-size: 1.35rem;
             font-weight: 900;
-            height: 96px;
             letter-spacing: -.03em;
-            object-fit: contain;
-            place-items: center;
-            width: 96px;
         }
         .to-eyebrow {
             color: rgba(255,255,255,.78);
@@ -453,7 +461,7 @@ def _badge_html(team_name: str) -> str:
             return f'<img class="to-badge" src="{uri}" alt="{ui.esc(team_name)} badge">'
 
     initials = "".join(word[:1] for word in str(team_name).split()[:2]).upper() or "FC"
-    return f'<div class="to-badge">{ui.esc(initials)}</div>'
+    return f'<div class="to-badge to-badge-fallback">{ui.esc(initials)}</div>'
 
 
 def _fmt(value: object, digits: int = 1, fallback: str = "—") -> str:
