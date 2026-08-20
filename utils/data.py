@@ -600,45 +600,12 @@ DEFENSIVE_PLAYER_MATCH_COLUMNS = [
 
 
 # ---- SNOWFLAKE CONNECTION ----------------------------------------------------
-def _inline_private_key_der(pem_base64: str, password: str | None) -> bytes:
-    """Decode a base64-wrapped PEM private key into DER bytes.
-
-    Lets a deployment target with no local filesystem for a .p8 file (e.g.
-    Streamlit Community Cloud) supply the key inline via secrets instead of
-    a file path.
-    """
-    import base64
-
-    from cryptography.hazmat.primitives import serialization
-
-    pem_bytes = base64.b64decode(pem_base64)
-    password_bytes = password.encode() if password else None
-    private_key = serialization.load_pem_private_key(pem_bytes, password=password_bytes)
-    return private_key.private_bytes(
-        encoding=serialization.Encoding.DER,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-
-
 def get_connection():
     """Streamlit's built-in Snowflake connection.
 
     Reads its settings from .streamlit/secrets.toml under [connections.snowflake].
     st.connection caches the connection, so this is cheap to call repeatedly.
-
-    Inside Streamlit-in-Snowflake, secrets.toml is never uploaded (the native
-    session is used instead). Outside it (local dev, Streamlit Community
-    Cloud), [connections.snowflake] normally points private_key_file at a
-    .p8 file on disk. When that file isn't available -- a secrets-only
-    deployment target -- a base64-encoded PEM key can be supplied instead
-    under private_key_base64, decoded here and passed straight through.
     """
-    snowflake_secrets = st.secrets.get("connections", {}).get("snowflake", {}) if hasattr(st, "secrets") else {}
-    inline_key = snowflake_secrets.get("private_key_base64")
-    if inline_key:
-        der_key = _inline_private_key_der(inline_key, snowflake_secrets.get("private_key_file_pwd"))
-        return st.connection("snowflake", private_key=der_key)
     return st.connection("snowflake")
 
 
