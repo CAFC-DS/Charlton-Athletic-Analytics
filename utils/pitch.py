@@ -1877,10 +1877,29 @@ def goalmouth_shot_map(
             margin=dict(l=28, r=180, t=96, b=54),
             legend=dict(
                 orientation="v",
+                title_text="<b>Key: colour = player</b>",
                 yanchor="top",
                 y=1,
                 xanchor="left",
                 x=1.02,
+                font=dict(size=10),
+            ),
+        )
+    else:
+        legend_title = (
+            "<b>Key: colour/symbol = outcome</b>"
+            if group_col == "Outcome"
+            else "<b>Key: colour = player</b>"
+        )
+        fig.update_layout(
+            margin=dict(l=28, r=34, t=84, b=128),
+            legend=dict(
+                orientation="h",
+                title_text=legend_title,
+                yanchor="top",
+                y=-0.12,
+                xanchor="left",
+                x=0,
                 font=dict(size=10),
             ),
         )

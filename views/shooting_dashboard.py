@@ -37,6 +37,15 @@ OUTCOME_SYMBOLS = {
     "Off Target": "x",
     "Other Shot": "diamond",
 }
+SHOT_TYPE_ORDER = ["Header", "Penalty Kick", "Free Kick", "Long Range Shot", "Mid Range Shot", "Other Shot"]
+SHOT_TYPE_SYMBOLS = {
+    "Header": "triangle-up",
+    "Penalty Kick": "star",
+    "Free Kick": "hexagon",
+    "Long Range Shot": "diamond",
+    "Mid Range Shot": "circle",
+    "Other Shot": "square",
+}
 SHOT_DISTANCE_ZONES = [
     {"min": 0.0, "max": 11.0, "label": "Close Range", "range_label": "0-11m", "color": "rgba(21,128,61,0.16)", "line": "#15803d"},
     {"min": 11.0, "max": 18.0, "label": "Box / Good Range", "range_label": "11-18m", "color": "rgba(245,158,11,0.16)", "line": "#f59e0b"},
@@ -63,6 +72,21 @@ def _last_name_sort(value: object) -> tuple[str, str]:
 def _title_text(value: object, fallback: str = "Unknown") -> str:
     text = fallback if value is None or str(value).lower() == "nan" else str(value)
     return text.replace("_", " ").replace("-", " ").title()
+
+
+def _shot_type_symbol(value: object) -> str:
+    text = "" if value is None else str(value).upper()
+    if "HEADER" in text:
+        return SHOT_TYPE_SYMBOLS["Header"]
+    if "PENALTY" in text:
+        return SHOT_TYPE_SYMBOLS["Penalty Kick"]
+    if "FREE KICK" in text:
+        return SHOT_TYPE_SYMBOLS["Free Kick"]
+    if "LONG RANGE" in text:
+        return SHOT_TYPE_SYMBOLS["Long Range Shot"]
+    if "MID RANGE" in text:
+        return SHOT_TYPE_SYMBOLS["Mid Range Shot"]
+    return SHOT_TYPE_SYMBOLS["Other Shot"]
 
 
 def _is_goal(row: pd.Series) -> bool:
@@ -230,25 +254,11 @@ def _shot_map(
     if plotted.empty:
         return _empty_pitch_message(fig, "No mapped shot locations")
 
+    plotted["_Shot Type Key"] = plotted["Shot Type"].fillna("Other Shot").astype(str)
     max_xg = max(float(plotted["Shot xG"].max()), 0.08)
     for outcome in OUTCOME_ORDER:
         group = plotted[plotted["Outcome"] == outcome].copy()
         if group.empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="markers",
-                    name=outcome,
-                    marker=dict(
-                        size=12,
-                        color=OUTCOME_COLORS.get(outcome, "#344054"),
-                        symbol=OUTCOME_SYMBOLS.get(outcome, "circle"),
-                        line=dict(color="#ffffff", width=1.2),
-                    ),
-                    hoverinfo="skip",
-                )
-            )
             continue
         group["_Label"] = ""
         if show_labels:
@@ -283,10 +293,11 @@ def _shot_map(
                 marker=dict(
                     size=10 + (group["Shot xG"] / max_xg) * 26,
                     color=OUTCOME_COLORS.get(outcome, "#344054"),
-                    symbol=OUTCOME_SYMBOLS.get(outcome, "circle"),
+                    symbol=group["_Shot Type Key"].apply(_shot_type_symbol),
                     opacity=0.9,
                     line=dict(color="#ffffff", width=1.2),
                 ),
+                showlegend=False,
                 customdata=customdata,
                 hovertemplate=(
                     "%{customdata[0]} - %{customdata[8]}"
@@ -300,15 +311,57 @@ def _shot_map(
                 ),
             )
         )
+
+    for outcome in OUTCOME_ORDER:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name=f"Outcome: {outcome}",
+                legendgroup="outcome-key",
+                marker=dict(
+                    size=11,
+                    color=OUTCOME_COLORS.get(outcome, "#344054"),
+                    symbol="circle",
+                    line=dict(color="#ffffff", width=1.2),
+                ),
+                hoverinfo="skip",
+            )
+        )
+
+    present_types = plotted["_Shot Type Key"].dropna().astype(str).unique().tolist()
+    ordered_types = [shot_type for shot_type in SHOT_TYPE_ORDER if shot_type in present_types]
+    ordered_types.extend(sorted(shot_type for shot_type in present_types if shot_type not in ordered_types))
+    for shot_type in ordered_types:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name=f"Type: {shot_type}",
+                legendgroup="shot-type-key",
+                marker=dict(
+                    size=11,
+                    color="#667085",
+                    symbol=_shot_type_symbol(shot_type),
+                    line=dict(color="#ffffff", width=1.2),
+                ),
+                hoverinfo="skip",
+            )
+        )
+
     fig.update_layout(
         legend=dict(
             orientation="h",
-            title_text="<b>Shot Outcomes</b>",
+            title_text="<b>Key: colour = outcome · shape = shot type</b>",
             yanchor="top",
-            y=-0.06,
+            y=-0.12,
             xanchor="left",
             x=0,
-        )
+            font=dict(size=10),
+        ),
+        margin=dict(l=18, r=18, t=74, b=142),
     )
     return fig
 
@@ -1213,6 +1266,10 @@ with tabs[0]:
             ),
             width="stretch",
         )
+        st.caption(
+            "Map key: colour shows the shot outcome, marker shape shows the shot type, and marker size scales with pre-shot xG. "
+            "Hover a marker for body part, distance, angle, xG and post-shot xG."
+        )
     with map_cols[1]:
         st.plotly_chart(
             _shot_zone_heatmap(filtered_shots, f"{team_name}: Shot Origin Heatmap", value_mode=heatmap_mode, height=map_height),
@@ -1256,7 +1313,9 @@ with tabs[3]:
     pa.section_heading("Goalmouth and Shot Execution")
     st.caption(
         "Goalmouth view uses Shot Target Y/Z where available, shown from the shooter's view to match external shot maps. "
-        "The axis scale is fixed tightly around the goal so players can be compared on the same coordinates."
+        "The key is below the chart: colour and symbol show shot outcome, while marker size shows post-shot xG "
+        "(falling back to pre-shot xG when unavailable). The axis scale is fixed tightly around the goal so players "
+        "can be compared on the same coordinates."
     )
     goal_cols = st.columns([0.04, 0.92, 0.04])
     with goal_cols[1]:
