@@ -953,8 +953,23 @@ def cluster_passing_profiles(teams: pd.DataFrame) -> pd.DataFrame:
 
 def cluster_chart(clustered: pd.DataFrame, selected: str | None) -> go.Figure:
     clustered = clustered.copy()
-    clustered["_Selected Size"] = np.where(clustered["Team"].astype(str) == str(selected), 18, 11)
-    clustered["_Text"] = charting.selected_text(clustered["Team"], selected)
+    clustered["Pass Security Percentile"] = pd.to_numeric(clustered["Pass Security Percentile"], errors="coerce")
+    clustered["Progression Percentile"] = pd.to_numeric(clustered["Progression Percentile"], errors="coerce")
+    clustered = clustered.dropna(subset=["Pass Security Percentile", "Progression Percentile"]).reset_index(drop=True)
+    selected_mask = clustered["Team"].astype(str).eq(str(selected))
+    clustered["_Selected Size"] = np.where(selected_mask, 18, 11)
+    clustered["_Text"] = clustered["Team"].apply(lambda value: charting.wrap_label(value, width=16, max_lines=2))
+    clustered.loc[selected_mask, "_Text"] = clustered.loc[selected_mask, "_Text"].map(lambda value: f"<b>{value}</b>")
+
+    clustered["_Text Position"] = "top center"
+    upper_positions = ["bottom center", "middle right", "middle left", "top center"]
+    lower_positions = ["top center", "middle right", "middle left", "bottom center"]
+    for cluster_name, group in clustered.groupby("Cluster", sort=False):
+        positions = upper_positions if "Progressor" in str(cluster_name) else lower_positions
+        ordered_indices = group.sort_values(["Progression Percentile", "Pass Security Percentile"]).index.tolist()
+        for index, row_index in enumerate(ordered_indices):
+            clustered.loc[row_index, "_Text Position"] = positions[index % len(positions)]
+
     fig = px.scatter(
         clustered,
         x="Pass Security Percentile",
@@ -963,12 +978,59 @@ def cluster_chart(clustered: pd.DataFrame, selected: str | None) -> go.Figure:
         text="_Text",
         size="_Selected Size",
         size_max=18,
-        hover_data=["Pass %", "Passes to Final 3rd /90", "Bypassed Opponents /90"],
+        custom_data=["Team", "Cluster"],
     )
     fig.add_hline(y=55, line_dash="dash", line_color=LIGHT_GREY)
     fig.add_vline(x=55, line_dash="dash", line_color=LIGHT_GREY)
-    fig.update_traces(textposition="top center", marker=dict(line=dict(width=1.2, color="#ffffff"), opacity=0.9))
-    fig.update_layout(height=560, showlegend=True)
+    text_position_lookup = clustered.set_index("Team")["_Text Position"].to_dict()
+    for trace in fig.data:
+        trace_teams = [str(row[0]) for row in trace.customdata]
+        trace.textposition = [text_position_lookup.get(team, "top center") for team in trace_teams]
+        trace.textfont = dict(size=9, color=DARK)
+        trace.hovertemplate = (
+            "<b>%{customdata[0]}</b><br>%{customdata[1]}"
+            "<br>Pass security: %{x:.0f}/100"
+            "<br>Progression: %{y:.0f}/100<extra></extra>"
+        )
+        trace.marker.update(line=dict(width=1.2, color="#ffffff"), opacity=0.9)
+
+    badge_width = 4.5
+    badge_height = 7.0
+    for _, row in clustered.iterrows():
+        badge_uri = team_badges.badge_data_uri(row["Team"])
+        if not badge_uri:
+            continue
+        badge_scale = 1.35 if str(row["Team"]) == str(selected) else 1.0
+        fig.add_layout_image(
+            dict(
+                source=badge_uri,
+                x=row["Pass Security Percentile"],
+                y=row["Progression Percentile"],
+                xref="x",
+                yref="y",
+                xanchor="center",
+                yanchor="middle",
+                sizex=badge_width * badge_scale,
+                sizey=badge_height * badge_scale,
+                sizing="contain",
+                layer="above",
+            )
+        )
+
+    selected_row = clustered[selected_mask]
+    if not selected_row.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=selected_row["Pass Security Percentile"],
+                y=selected_row["Progression Percentile"],
+                mode="markers",
+                marker=dict(size=27, color="rgba(255,255,255,0)", line=dict(width=3, color=RED)),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    fig.update_layout(height=620, showlegend=True, hovermode="closest", hoverdistance=12)
     fig.update_xaxes(tickformat=".0f", range=[0, 105])
     fig.update_yaxes(tickformat=".0f", range=[0, 105])
     return polish_figure(fig, "Pass profile clusters")

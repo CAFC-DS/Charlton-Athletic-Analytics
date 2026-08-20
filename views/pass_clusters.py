@@ -92,18 +92,20 @@ def _profile_cards(clustered: pd.DataFrame, team_name: str) -> None:
 def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
     fig = ta.cluster_chart(clustered, selected=selected)
     fig.update_layout(
-        title=dict(text="League Passing Identity Map", x=0.01, xanchor="left"),
-        height=620,
-        margin=dict(l=54, r=34, t=82, b=68),
+        title=dict(text=f"League Passing Identity Map — {selected} highlighted", x=0.01, xanchor="left"),
+        height=680,
+        margin=dict(l=62, r=42, t=86, b=94),
         legend=dict(orientation="h", yanchor="top", y=-0.14, xanchor="left", x=0, title_text="Identity"),
     )
     fig.update_xaxes(title="Pass Security Percentile - completion and ball retention proxy")
     fig.update_yaxes(title="Progression Percentile - final-third access and opponents bypassed")
     fig.add_annotation(
-        x=82,
-        y=96,
+        x=103,
+        y=103,
         text="Controlled progressors",
         showarrow=False,
+        xanchor="right",
+        yanchor="top",
         font=dict(size=12, color="#16803c"),
         bgcolor="rgba(255,255,255,0.78)",
         bordercolor="#d9eadf",
@@ -111,10 +113,12 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         borderpad=5,
     )
     fig.add_annotation(
-        x=20,
-        y=96,
+        x=2,
+        y=103,
         text="Direct progressors",
         showarrow=False,
+        xanchor="left",
+        yanchor="top",
         font=dict(size=12, color="#c30017"),
         bgcolor="rgba(255,255,255,0.78)",
         bordercolor="#f0ccd1",
@@ -122,11 +126,26 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         borderpad=5,
     )
     fig.add_annotation(
-        x=82,
-        y=10,
+        x=103,
+        y=2,
         text="Secure circulators",
         showarrow=False,
+        xanchor="right",
+        yanchor="bottom",
         font=dict(size=12, color="#344054"),
+        bgcolor="rgba(255,255,255,0.78)",
+        bordercolor="#d0d5dd",
+        borderwidth=1,
+        borderpad=5,
+    )
+    fig.add_annotation(
+        x=2,
+        y=2,
+        text="Lower volume",
+        showarrow=False,
+        xanchor="left",
+        yanchor="bottom",
+        font=dict(size=12, color="#7a7f87"),
         bgcolor="rgba(255,255,255,0.78)",
         bordercolor="#d0d5dd",
         borderwidth=1,
@@ -155,44 +174,75 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
                 "Percentile Gap": selected_percentile - 50.0,
             }
         )
-    plot_df = pd.DataFrame(rows)
+    plot_df = pd.DataFrame(rows).dropna(subset=["Percentile Gap"])
     if plot_df.empty:
         fig = ta.polish_figure(go.Figure(), "Selected Team vs League Average")
         fig.update_layout(height=360)
         return fig
 
     plot_df["Colour"] = np.where(plot_df["Percentile Gap"].ge(0), "#16803c", "#c30017")
-    plot_df["Label"] = [
-        f"{row['Percentile']:.0f}th percentile ({charting.metric_text(row['Selected'], row['Metric'])})"
+    plot_df["Metric Label"] = plot_df["Metric"].map(lambda value: charting.wrap_label(value, width=20, max_lines=2))
+    plot_df["Selected Label"] = [
+        charting.metric_text(row["Selected"], row["Metric"])
         for _, row in plot_df.iterrows()
     ]
+    plot_df["League Label"] = [
+        charting.metric_text(row["League Average"], row["Metric"])
+        for _, row in plot_df.iterrows()
+    ]
+    plot_df["Percentile Label"] = plot_df["Percentile"].apply(_percentile_text)
+    plot_df["Gap Label"] = plot_df["Percentile Gap"].map(lambda value: f"{value:+.0f} pts")
     fig = go.Figure(
         go.Bar(
             x=plot_df["Percentile Gap"],
-            y=plot_df["Metric"].map(lambda value: charting.wrap_label(value, width=22, max_lines=1)),
+            y=plot_df["Metric Label"],
             orientation="h",
             marker_color=plot_df["Colour"],
-            text=plot_df["Label"],
-            textposition="outside",
-            cliponaxis=False,
-            customdata=np.stack([plot_df["Metric"], plot_df["Selected"], plot_df["League Average"], plot_df["Percentile"]], axis=-1),
+            customdata=np.stack(
+                [
+                    plot_df["Metric"],
+                    plot_df["Selected Label"],
+                    plot_df["League Label"],
+                    plot_df["Percentile Label"],
+                    plot_df["Gap Label"],
+                ],
+                axis=-1,
+            ),
             hovertemplate=(
-                "<b>%{customdata[0]}</b><br>Selected: %{customdata[1]:.2f}<br>"
-                "League average: %{customdata[2]:.2f}<br>League percentile: %{customdata[3]:.0f}th<extra></extra>"
+                f"<b>%{{customdata[0]}}</b><br>{team_name}: %{{customdata[1]}}<br>"
+                "League average: %{customdata[2]}<br>%{customdata[3]} (%{customdata[4]})<extra></extra>"
             ),
         )
     )
     fig.add_vline(x=0, line=dict(color="#7a7f87", width=1.4, dash="dash"))
     max_gap = float(plot_df["Percentile Gap"].abs().max()) if not plot_df.empty else 50.0
+    axis_limit = max(max_gap, 20) * 1.18
+    fig = ta.polish_figure(fig, f"{team_name}: Passing Metric Gaps vs League Median")
+    for _, row in plot_df.iterrows():
+        fig.add_annotation(
+            x=1.02,
+            y=row["Metric Label"],
+            xref="paper",
+            yref="y",
+            text=(
+                f"<b>{row['Percentile Label']}</b> ({row['Gap Label']})"
+                f"<br><span style='font-size:10px'>{team_name}: {row['Selected Label']}</span>"
+            ),
+            showarrow=False,
+            xanchor="left",
+            yanchor="middle",
+            align="left",
+            font=dict(size=11, color="#344054"),
+        )
     fig.update_layout(
-        height=130 * len(plot_df) + 120,
+        height=125 * len(plot_df) + 135,
         xaxis_title="League Percentile Gap (0 = league median)",
         yaxis_title="",
         showlegend=False,
-        margin=dict(l=140, r=90, t=72, b=58),
+        margin=dict(l=166, r=220, t=76, b=62),
     )
-    fig.update_xaxes(range=[-max(max_gap, 20) * 1.35, max(max_gap, 20) * 1.35])
-    return ta.polish_figure(fig, f"{team_name}: Passing Metric Gaps vs League Median")
+    fig.update_xaxes(range=[-axis_limit, axis_limit])
+    return fig
 
 
 def _closest_matches(clustered: pd.DataFrame, team_name: str, limit: int = 6) -> pd.DataFrame:
@@ -287,7 +337,7 @@ st.plotly_chart(_metric_comparison_chart(clustered, team_name), width="stretch")
 st.caption(
     "Bars show league-percentile points above or below the median (0), not raw metric gaps -- Pass %, Passes to "
     "Final 3rd /90 and Bypassed Opponents /90 sit on very different numeric scales, so a shared percentile axis is "
-    "what makes them comparable in a single chart. Raw values sit in the outside label and hover."
+    "what makes them comparable in a single chart. Raw values sit in the fixed right-hand value column and hover."
 )
 
 ta.section_heading(f"{team_name} Crossing Profile")
