@@ -49,7 +49,12 @@ if teams.empty:
 with st.expander("Radar Controls & Tactical Filters", expanded=True):
     # Team Selector (Multi-select)
     team_names = sorted(teams["Team"].dropna().unique().tolist())
-    
+
+    if "tr_teams" in st.session_state:
+        stale = [t for t in st.session_state["tr_teams"] if t not in team_names]
+        if stale:
+            del st.session_state["tr_teams"]
+
     # Default selection: Charlton if available
     charlton_matches = [t for t in team_names if "charlton" in t.lower()]
     default_teams = [charlton_matches[0]] if charlton_matches else [team_names[0]] if team_names else []

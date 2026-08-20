@@ -289,6 +289,8 @@ def metric_columns(df: pd.DataFrame) -> list[str]:
 
 def team_selector(teams: pd.DataFrame, key: str, label: str = "Team") -> str:
     team_names = teams["Team"].dropna().astype(str).tolist()
+    if key in st.session_state and st.session_state[key] not in team_names:
+        del st.session_state[key]
     charlton_matches = [index for index, team in enumerate(team_names) if "charlton" in team.lower()]
     default = charlton_matches[0] if charlton_matches else 0
     return st.selectbox(label, team_names, index=default, key=key)
@@ -388,9 +390,10 @@ def style_scores(teams: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def selected_team_style(teams: pd.DataFrame, team_name: str) -> pd.Series:
+def selected_team_style(teams: pd.DataFrame, team_name: str) -> pd.Series | None:
     scores = style_scores(teams)
-    return scores[scores["Team"] == team_name].iloc[0]
+    matched = scores[scores["Team"] == team_name]
+    return matched.iloc[0] if not matched.empty else None
 
 
 def highlight_colors(values: pd.Series, selected: str | None = None) -> list[str]:

@@ -24,7 +24,11 @@ if teams.empty:
 st.caption("Use the team dropdown to choose which profile is drawn in the radar chart.")
 team_name = ta.team_selector(teams, key="team_style_team")
 scores = ta.style_scores(teams)
-selected = scores[scores["Team"] == team_name].iloc[0]
+matched = scores[scores["Team"] == team_name]
+if matched.empty:
+    st.warning(f"No style scores are available for {team_name} this season.")
+    st.stop()
+selected = matched.iloc[0]
 
 labels = [col for col in scores.columns if col != "Team"]
 values = [float(selected[col]) for col in labels]

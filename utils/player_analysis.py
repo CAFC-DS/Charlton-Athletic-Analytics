@@ -571,7 +571,7 @@ def _percentile_value(series: pd.Series, target_index: object, higher_is_better:
     return round(float(value) * 100, 1) if pd.notna(value) else np.nan
 
 
-def _rank_value(series: pd.Series, target_index: object, higher_is_better: bool = True) -> int | pd.NA:
+def _rank_value(series: pd.Series, target_index: object, higher_is_better: bool = True) -> int | None:
     values = pd.to_numeric(series, errors="coerce")
     ranks = values.rank(method="min", ascending=not higher_is_better)
     value = ranks.loc[target_index] if target_index in ranks.index else np.nan
