@@ -988,7 +988,10 @@ def _contexts_for_season(season: str | None) -> pd.DataFrame:
 def _event_iteration_ids() -> set[int]:
     if USE_MOCK_DATA:
         return {1410}
-    rows = get_connection().query(
+    conn = get_connection()
+    if conn is None:
+        return set()
+    rows = conn.query(
         f"""
         SELECT DISTINCT ITERATION_ID AS "IterationId"
         FROM {relation("impect_events")}
