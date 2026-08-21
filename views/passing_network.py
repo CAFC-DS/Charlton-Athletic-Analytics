@@ -81,7 +81,11 @@ if matches.empty:
 
 match_row = ma.match_selector(matches, key="passing_network_match")
 team_name = ma.team_selector_for_match(match_row, key="passing_network_team")
-network = data.load_pass_network(match_id=match_row.get("MatchId"), team=team_name)
+network = data.load_pass_network(
+    season=season,
+    match_id=match_row.get("MatchId"),
+    team=team_name,
+)
 team_passes = data.load_match_events(
     season=season,
     match_id=match_row.get("MatchId"),
@@ -108,11 +112,12 @@ with metric_cols[4]:
 ma.section_heading("Network controls")
 control_cols = st.columns(2)
 max_count = int(pd.to_numeric(network["Pass Count"], errors="coerce").max()) if not network.empty else 2
+default_min_passes = min(2, max(max_count, 1))
 min_passes = control_cols[0].slider(
     "Minimum link passes",
     min_value=1,
     max_value=max(max_count, 2),
-    value=1,
+    value=default_min_passes,
 )
 label = f"{team_name} pass network"
 

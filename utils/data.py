@@ -3479,12 +3479,17 @@ def load_set_piece_events(
 def _legacy_load_pass_network(
     match_id: object | None = None,
     team: str | None = None,
+    season: str | None = None,
 ) -> pd.DataFrame:
     """Compatibility alias for the current production pass-network loader."""
-    return load_pass_network(match_id=match_id, team=team)
+    return load_pass_network(match_id=match_id, team=team, season=season)
 
 
-def load_pass_network(match_id: object | None = None, team: str | None = None) -> pd.DataFrame:
+def load_pass_network(
+    match_id: object | None = None,
+    team: str | None = None,
+    season: str | None = None,
+) -> pd.DataFrame:
     """Passer-to-receiver links derived from the CAFC_DB event feed."""
     if USE_MOCK_DATA:
         network = _mock_pass_network()
@@ -3497,6 +3502,7 @@ def load_pass_network(match_id: object | None = None, team: str | None = None) -
         return _empty_pass_network()
 
     passes = load_match_events(
+        season=season,
         match_id=match_id,
         team=team,
         action_types=["PASS"],

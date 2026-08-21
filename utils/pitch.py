@@ -535,6 +535,58 @@ def _normalise_network_ids(values: pd.Series) -> pd.Series:
     return numeric.astype("Int64").astype("string")
 
 
+def _network_initials(value: object) -> str:
+    text = _safe_text(value).strip()
+    if not text:
+        return "?"
+    words = [word for word in text.split() if word]
+    if len(words) == 1:
+        return words[0][:3].upper()
+    return f"{words[0][0]}{words[-1][0]}".upper()
+
+
+def _spread_network_nodes(
+    nodes: pd.DataFrame,
+    min_distance: float = 8.0,
+    iterations: int = 80,
+) -> pd.DataFrame:
+    """Separate close average positions while keeping them near their data anchors."""
+    if len(nodes) < 2:
+        return nodes.copy()
+
+    out = nodes.copy()
+    positions = out[["X", "Y"]].apply(pd.to_numeric, errors="coerce").to_numpy(
+        dtype=float,
+        copy=True,
+    )
+    anchors = positions.copy()
+
+    for _ in range(iterations):
+        displacement = np.zeros_like(positions)
+        for first in range(len(positions)):
+            for second in range(first + 1, len(positions)):
+                delta = positions[first] - positions[second]
+                distance = float(np.linalg.norm(delta))
+                if distance >= min_distance:
+                    continue
+                if distance <= 1e-6:
+                    angle = first * 2.399963 + second * 0.913271
+                    direction = np.array([np.cos(angle), np.sin(angle)])
+                else:
+                    direction = delta / distance
+                push = (min_distance - distance) * 0.42
+                displacement[first] += direction * push
+                displacement[second] -= direction * push
+
+        positions += displacement
+        positions += (anchors - positions) * 0.08
+        positions[:, 0] = np.clip(positions[:, 0], PITCH_X_MIN + 5, PITCH_X_MAX - 5)
+        positions[:, 1] = np.clip(positions[:, 1], PITCH_Y_MIN + 5, PITCH_Y_MAX - 5)
+
+    out[["X", "Y"]] = positions
+    return out
+
+
 def passing_network(
     network: pd.DataFrame,
     team: str | None,
@@ -581,6 +633,8 @@ def passing_network(
         _empty_pitch_message(fig, "No pass-network links")
         return fig
 
+    nodes = _spread_network_nodes(nodes)
+
     # To make the network actionable, we connect player dots and combine bidirectional links.
     node_map = {
         str(node_id): node
@@ -611,7 +665,8 @@ def passing_network(
             hover_text = f"<b>Total: {row['TotalPasses']:.0f} passes</b><br>" + "<br>".join(tooltip_parts)
 
             strength = row["TotalPasses"] / max_total
-            width = 3.6 + strength * 8.4
+            width = 1.5 + strength * 5.5
+            edge_color = f"rgba(105, 113, 124, {0.28 + 0.55 * strength:.2f})"
 
             fig.add_trace(
                 go.Scatter(
@@ -632,21 +687,14 @@ def passing_network(
                     name="Pass links",
                     legendgroup="links",
                     showlegend=bool(index == combined.index[0]),
-                    line=dict(color=f"rgba(195, 0, 23, {0.45 + 0.45 * strength:.2f})", width=width),
+                    line=dict(color=edge_color, width=width),
                     hovertext=hover_text,
                     hoverinfo="text",
                 )
             )
 
     max_involvement = max(_finite(nodes["Involvement"].max(), 1.0), 1.0)
-    nodes["Label"] = ""
-    label_limit = 24
-    if len(nodes) <= label_limit:
-        label_mask = pd.Series(True, index=nodes.index)
-    else:
-        label_mask = nodes["Involvement"].rank(method="first", ascending=False) <= label_limit
-    nodes.loc[label_mask, "Label"] = nodes.loc[label_mask, "Player"].apply(lambda value: charting.wrap_label(value, 13, 2))
-    nodes["Label Position"] = _network_label_positions(nodes)
+    nodes["Initials"] = nodes["Player"].apply(_network_initials)
     customdata = np.stack(
         [
             nodes["Player"],
@@ -662,21 +710,21 @@ def passing_network(
             y=nodes["Y"],
             mode="markers+text",
             name="Players",
-            text=nodes["Label"],
-            textposition=nodes["Label Position"],
-            textfont=dict(size=10, color=DARK),
+            text=nodes["Initials"],
+            textposition="middle center",
+            textfont=dict(size=10, color="#ffffff", family="Inter Bold, Arial"),
             marker=dict(
-                size=12 + (nodes["Involvement"] / max_involvement) * 24,
+                size=18 + (nodes["Involvement"] / max_involvement) * 20,
                 color=DEEP_RED,
                 opacity=0.92,
                 line=dict(color="#ffffff", width=1.4),
             ),
             customdata=customdata,
             hovertemplate=(
-                "%{customdata[0]}"
+                "<b>%{customdata[0]}</b>"
                 "<br>Passes out: %{customdata[1]:.0f}"
                 "<br>Passes in: %{customdata[2]:.0f}"
-                "<br>Involvement: %{customdata[3]:.0f}<extra></extra>"
+                "<br>Total pass volume: %{customdata[3]:.0f}<extra></extra>"
             ),
         )
     )

@@ -736,7 +736,11 @@ raw_events = data.load_match_events(
     limit=12000,
 )
 passes = raw_events.dropna(subset=["Start X", "Start Y", "End X", "End Y"]).copy()
-pass_network_rows = data.load_pass_network(match_id=match_row.get("MatchId"), team=team_name)
+pass_network_rows = data.load_pass_network(
+    season=match_season,
+    match_id=match_row.get("MatchId"),
+    team=team_name,
+)
 
 if passes.empty:
     st.info("No mapped pass events are available for this selected fixture and team.")
