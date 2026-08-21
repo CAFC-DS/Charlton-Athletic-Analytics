@@ -1050,10 +1050,14 @@ def cluster_chart(clustered: pd.DataFrame, selected: str | None) -> go.Figure:
         fig.add_trace(
             go.Image(
                 source=sprite,
-                x0=52.5,
-                dx=117,
-                y0=52.5,
-                dy=117,
+                # The sprite is 10 pixels per percentile point.  Image
+                # traces use dx/dy as the chart-space size of one pixel;
+                # using the full sprite span here pushed every badge off
+                # the 0-105 axes.
+                x0=-6.0,
+                dx=0.1,
+                y0=111.0,
+                dy=-0.1,
                 name=cluster_name,
                 legendrank=legend_rank,
                 hoverinfo="skip",
