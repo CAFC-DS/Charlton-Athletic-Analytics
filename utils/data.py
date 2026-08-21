@@ -160,6 +160,26 @@ DEFENSIVE_PLAYER_KPI_IDS = {
     ]
 }
 
+# Newer Impect iterations can have raw event rows before the curated
+# match-level KPI tables are backfilled. These are the provider KPI keys that
+# are present in EVENT_KPIS for the defensive event fallback below.
+_EVENT_DEFENSIVE_KPI_KEYS = {
+    "Ball Wins": "BALL_WIN_NUMBER",
+    "Ball Losses": "BALL_LOSS_NUMBER",
+    "Opponents Removed": "BALL_WIN_REMOVED_OPPONENTS",
+    "Defenders Removed": "BALL_WIN_REMOVED_OPPONENTS_DEFENDERS",
+    "Ball Win Value": "PXT_BALL_WIN",
+    "Defensive Touches": "DEFENSIVE_TOUCHES",
+    "Second Balls": "SECOND_BALL_START",
+    "Second Balls Won": "SECOND_BALL_WIN",
+    "Ground Duels Won": "WON_GROUND_DUELS",
+    "Ground Duels Lost": "LOST_GROUND_DUELS",
+    "Aerial Duels Won": "WON_AERIAL_DUELS",
+    "Aerial Duels Lost": "LOST_AERIAL_DUELS",
+    "Goals": "GOALS",
+    "Shot xG": "SHOT_XG",
+}
+
 # Impect's ACTION values for an open-play cross, both nested under ACTION_TYPE='PASS'.
 CROSS_ACTIONS = {"LOW_CROSS", "HIGH_CROSS"}
 
@@ -2298,6 +2318,284 @@ def _match_dimensions(contexts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
     return matches, squads, players
 
 
+def _event_defensive_kpi_expression(json_key: str) -> str:
+    """Return a guarded expression for one provider event KPI value."""
+    return (
+        'IFF(TRY_TO_NUMBER(e.EVENT_KPIS[0]:"playerId"::STRING) = e.PLAYER_ID, '
+        f'TRY_TO_DOUBLE(e.EVENT_KPIS[0]:"{json_key}"::STRING), NULL)'
+    )
+
+
+def _load_defensive_event_rows(
+    contexts: pd.DataFrame,
+    iteration_ids: list[int],
+) -> pd.DataFrame:
+    """Load raw event KPI values used when match KPI facts are not backfilled.
+
+    The current season can expose the raw Impect event feed before the curated
+    ``impect_match_*_kpis`` relations are populated. Keep this adapter separate
+    from the normal event view so the defensive page can still return match and
+    player rows without changing the established event contract.
+    """
+    columns = [
+        "IterationId",
+        "MatchId",
+        "TeamId",
+        "PlayerId",
+        "Position",
+        "Period",
+        "Second",
+        "Action Type",
+        "Action",
+        "Phase",
+        "Result",
+        "Pressure",
+        "Start X",
+        "Start Y",
+        "Start Lane",
+        *list(_EVENT_DEFENSIVE_KPI_KEYS),
+    ]
+    if not iteration_ids:
+        return pd.DataFrame(columns=columns)
+
+    kpi_select = ",\n            ".join(
+        f'{_event_defensive_kpi_expression(json_key)} AS "{output_column}"'
+        for output_column, json_key in _EVENT_DEFENSIVE_KPI_KEYS.items()
+    )
+    placeholders = ", ".join(["?"] * len(iteration_ids))
+    rows = get_connection().query(
+        f"""
+        SELECT
+            e.ITERATION_ID AS "IterationId",
+            e.MATCH_ID AS "MatchId",
+            e.SQUAD_ID AS "TeamId",
+            e.PLAYER_ID AS "PlayerId",
+            e.PLAYER_POSITION AS "Position",
+            e.PERIOD_ID AS "Period",
+            e.GAME_TIME_IN_SEC AS "Second",
+            e.ACTION_TYPE AS "Action Type",
+            e.ACTION AS "Action",
+            e.PHASE AS "Phase",
+            e.RESULT AS "Result",
+            e.PRESSURE AS "Pressure",
+            e.START_DETAIL:"adjCoordinates":"x"::FLOAT AS "Start X",
+            e.START_DETAIL:"adjCoordinates":"y"::FLOAT AS "Start Y",
+            e.START_DETAIL:"lane"::STRING AS "Start Lane",
+            {kpi_select}
+        FROM {relation("impect_events")} e
+        WHERE e.ITERATION_ID IN ({placeholders})
+          AND e.SQUAD_ID IS NOT NULL
+        ORDER BY e.ITERATION_ID, e.MATCH_ID, e.GAME_TIME_IN_SEC, e.EVENT_INDEX
+        """,
+        params=_snowflake_params(iteration_ids),
+        ttl="30m",
+    )
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    matches, squads, _ = _match_dimensions(contexts)
+    home = squads.rename(columns={"TeamId": "HomeTeamId", "Team": "Home"})
+    away = squads.rename(columns={"TeamId": "AwayTeamId", "Team": "Away"})
+    rows = (
+        rows.merge(matches, on=["IterationId", "MatchId"], how="left")
+        .merge(home, on=["IterationId", "HomeTeamId"], how="left")
+        .merge(away, on=["IterationId", "AwayTeamId"], how="left")
+        .merge(squads, on=["IterationId", "TeamId"], how="left")
+        .merge(contexts[["IterationId", "Season", "Competition"]], on="IterationId", how="left")
+    )
+    for column in ["Second", "Pressure", "Start X", "Start Y", *list(_EVENT_DEFENSIVE_KPI_KEYS)]:
+        rows[column] = pd.to_numeric(rows[column], errors="coerce").fillna(0.0)
+    rows["Phase"] = rows["Phase"].fillna("").astype(str).str.upper()
+    rows["Action Type"] = rows["Action Type"].fillna("").astype(str).str.upper()
+    rows["Action"] = rows["Action"].fillna("").astype(str).str.upper()
+    rows["Start Lane"] = rows["Start Lane"].fillna("").astype(str).str.upper()
+    rows["_Pressure Event"] = rows["Pressure"].gt(0)
+    rows["_Counterpress"] = rows["_Pressure Event"] & rows["Phase"].eq("ATTACKING_TRANSITION")
+    rows["_Build-Up Press"] = rows["_Pressure Event"] & rows["Phase"].eq("IN_POSSESSION")
+    rows["_Between-Lines Press"] = False
+    rows["_Goal"] = rows["Action Type"].eq("GOAL") | rows["Action"].eq("GOAL")
+    return rows
+
+
+def _event_defensive_group_aggregations(events: pd.DataFrame, group_columns: list[str]) -> pd.DataFrame:
+    """Aggregate event-derived defensive values at a requested data grain."""
+    if events.empty:
+        return pd.DataFrame(columns=group_columns)
+
+    aggregations = {column: (column, "sum") for column in _EVENT_DEFENSIVE_KPI_KEYS}
+    aggregations.update(
+        {
+            "Presses": ("_Pressure Event", "sum"),
+            "Counterpresses": ("_Counterpress", "sum"),
+            "Build-Up Presses": ("_Build-Up Press", "sum"),
+            "Between-Lines Presses": ("_Between-Lines Press", "sum"),
+        }
+    )
+    return events.groupby(group_columns, dropna=False, observed=True).agg(**aggregations).reset_index()
+
+
+def _event_defensive_squad_rows(events: pd.DataFrame) -> pd.DataFrame:
+    """Build squad-match defensive rows from raw event KPI values."""
+    group_columns = ["IterationId", "MatchId", "TeamId"]
+    rows = _event_defensive_group_aggregations(events, group_columns)
+    if rows.empty:
+        return _empty_defensive_squad_match_sums()
+
+    # Metrics conceded by a team are the corresponding opponent totals in the
+    # same match. This is safe because the selected competition is a two-team
+    # fixture and also keeps league-wide fallback rows independent of Charlton.
+    match_totals = rows.groupby(["IterationId", "MatchId"], as_index=False)[
+        ["Opponents Removed", "Defenders Removed", "Goals", "Shot xG"]
+    ].sum()
+    rows = rows.merge(
+        match_totals.rename(
+            columns={
+                "Opponents Removed": "_Match Opponents Removed",
+                "Defenders Removed": "_Match Defenders Removed",
+                "Goals": "_Match Goals",
+                "Shot xG": "_Match Shot xG",
+            }
+        ),
+        on=["IterationId", "MatchId"],
+        how="left",
+    )
+    rows["Suffered Bypassed Opponents"] = (
+        rows["_Match Opponents Removed"] - rows["Opponents Removed"]
+    ).clip(lower=0)
+    rows["Suffered Bypassed Defenders"] = (
+        rows["_Match Defenders Removed"] - rows["Defenders Removed"]
+    ).clip(lower=0)
+    rows["Goals Conceded"] = (rows["_Match Goals"] - rows["Goals"]).clip(lower=0)
+    rows["xG Conceded"] = (rows["_Match Shot xG"] - rows["Shot xG"]).clip(lower=0)
+
+    win_events = events[events["Ball Wins"].gt(0)].copy()
+    if not win_events.empty:
+        phase = win_events["Phase"]
+        start_x = win_events["Start X"]
+        lane = win_events["Start Lane"]
+        win_events["_First-Third"] = win_events["Ball Wins"].where(start_x.lt(-17.5), 0)
+        win_events["_Middle-Third"] = win_events["Ball Wins"].where(start_x.ge(-17.5) & start_x.lt(17.5), 0)
+        win_events["_Final-Third"] = win_events["Ball Wins"].where(start_x.ge(17.5), 0)
+        win_events["_Opponent-Box"] = win_events["Ball Wins"].where(start_x.ge(36.0), 0)
+        win_events["_Wide-Left"] = win_events["Ball Wins"].where(lane.eq("LEFT"), 0)
+        win_events["_Half-Left"] = win_events["Ball Wins"].where(lane.eq("HALF_LEFT"), 0)
+        win_events["_Centre"] = win_events["Ball Wins"].where(lane.isin({"CENTRE", "CENTER"}), 0)
+        win_events["_Half-Right"] = win_events["Ball Wins"].where(lane.eq("HALF_RIGHT"), 0)
+        win_events["_Wide-Right"] = win_events["Ball Wins"].where(lane.eq("RIGHT"), 0)
+        win_events["_Out-of-Possession"] = win_events["Ball Wins"].where(~phase.eq("IN_POSSESSION"), 0)
+        win_events["_Defensive-Transition"] = win_events["Ball Wins"].where(phase.eq("ATTACKING_TRANSITION"), 0)
+        win_events["_Set-Piece"] = win_events["Ball Wins"].where(phase.eq("SET_PIECE"), 0)
+        win_events["_Second-Ball-Phase"] = win_events["Ball Wins"].where(phase.eq("SECOND_BALL"), 0)
+        zone_aggregations = {
+            "First-Third Ball Wins": ("_First-Third", "sum"),
+            "Middle-Third Ball Wins": ("_Middle-Third", "sum"),
+            "Final-Third Ball Wins": ("_Final-Third", "sum"),
+            "Opponent-Box Ball Wins": ("_Opponent-Box", "sum"),
+            "Wide-Left Ball Wins": ("_Wide-Left", "sum"),
+            "Half-Left Ball Wins": ("_Half-Left", "sum"),
+            "Centre Ball Wins": ("_Centre", "sum"),
+            "Half-Right Ball Wins": ("_Half-Right", "sum"),
+            "Wide-Right Ball Wins": ("_Wide-Right", "sum"),
+            "Out-of-Possession Ball Wins": ("_Out-of-Possession", "sum"),
+            "Defensive-Transition Ball Wins": ("_Defensive-Transition", "sum"),
+            "Set-Piece Ball Wins": ("_Set-Piece", "sum"),
+            "Second-Ball Phase Wins": ("_Second-Ball-Phase", "sum"),
+        }
+        zones = win_events.groupby(group_columns, dropna=False, observed=True).agg(**zone_aggregations).reset_index()
+        rows = rows.merge(zones, on=group_columns, how="left")
+
+    for column in [
+        "Ground Duels Lost",
+        "Aerial Duels Lost",
+        "First-Third Ball Wins",
+        "Middle-Third Ball Wins",
+        "Final-Third Ball Wins",
+        "Opponent-Box Ball Wins",
+        "Wide-Left Ball Wins",
+        "Half-Left Ball Wins",
+        "Centre Ball Wins",
+        "Half-Right Ball Wins",
+        "Wide-Right Ball Wins",
+        "Out-of-Possession Ball Wins",
+        "Defensive-Transition Ball Wins",
+        "Set-Piece Ball Wins",
+        "Second-Ball Phase Wins",
+    ]:
+        if column not in rows:
+            rows[column] = 0.0
+
+    metadata = events.drop_duplicates(group_columns)[
+        group_columns + ["Date", "Competition", "Season", "Team"]
+    ]
+    rows = rows.merge(metadata, on=group_columns, how="left")
+    return rows.drop(
+        columns=[
+            "Goals",
+            "Shot xG",
+            "_Match Opponents Removed",
+            "_Match Defenders Removed",
+            "_Match Goals",
+            "_Match Shot xG",
+        ],
+        errors="ignore",
+    )
+
+
+def _event_defensive_player_rows(events: pd.DataFrame) -> pd.DataFrame:
+    """Build player-match defensive rows from raw event KPI values."""
+    player_events = events[events["PlayerId"].notna()].copy()
+    group_columns = ["IterationId", "MatchId", "TeamId", "PlayerId", "Position"]
+    rows = _event_defensive_group_aggregations(player_events, group_columns)
+    if rows.empty:
+        return _empty_defensive_player_match_sums()
+
+    # Re-use the same half-time-aware elapsed-time normalisation as the other
+    # event KPI fallback. A one-event appearance is floored at one minute.
+    player_events["_Elapsed Minute"] = _event_elapsed_minutes(player_events)
+    player_events["_Elapsed Second"] = (player_events["_Elapsed Minute"] - 1).mul(60)
+    period_spans = (
+        player_events.groupby([*group_columns, "Period"], dropna=False, observed=True)["_Elapsed Second"]
+        .agg(_First="min", _Last="max")
+        .reset_index()
+    )
+    duration = (
+        period_spans.assign(_Span=(period_spans["_Last"] - period_spans["_First"]).clip(lower=0))
+        .groupby(group_columns, dropna=False, observed=True)["_Span"]
+        .sum()
+        .clip(lower=60)
+        .rename("Play Duration Seconds")
+        .reset_index()
+    )
+    rows = rows.merge(duration, on=group_columns, how="left")
+    rows["Match Share"] = rows["Play Duration Seconds"].div(90 * 60).clip(upper=1.0)
+
+    metadata = player_events.drop_duplicates(group_columns)[
+        group_columns + ["Date", "Competition", "Season", "Team"]
+    ]
+    rows = rows.merge(metadata, on=group_columns, how="left")
+    players = _match_dimensions(
+        contexts=events[["IterationId", "Season", "Competition"]].drop_duplicates()
+    )[2]
+    rows = rows.merge(players, on=["IterationId", "PlayerId"], how="left")
+    return rows
+
+
+def _event_defensive_squad_match_sums(
+    contexts: pd.DataFrame,
+    iteration_ids: list[int],
+) -> pd.DataFrame:
+    events = _load_defensive_event_rows(contexts, iteration_ids)
+    return _clean_defensive_squad_match_sums(_event_defensive_squad_rows(events))
+
+
+def _event_defensive_player_match_sums(
+    contexts: pd.DataFrame,
+    iteration_ids: list[int],
+) -> pd.DataFrame:
+    events = _load_defensive_event_rows(contexts, iteration_ids)
+    return _clean_defensive_player_match_sums(_event_defensive_player_rows(events))
+
+
 def load_squad_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     """One row per team-match, pivoted from authoritative match KPI facts."""
     if USE_MOCK_DATA:
@@ -2325,7 +2623,7 @@ def load_squad_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     )
     rows = _pivot_long_kpis(long_values, ["IterationId", "MatchId", "TeamId"], "KpiId", "KpiValue")
     if rows.empty:
-        return _empty_defensive_squad_match_sums()
+        return _event_defensive_squad_match_sums(contexts, iteration_ids)
     for output_column, kpi_id in DEFENSIVE_SQUAD_KPI_IDS.items():
         rows[output_column] = pd.to_numeric(rows[kpi_id], errors="coerce") if kpi_id in rows else np.nan
 
@@ -2371,7 +2669,7 @@ def load_player_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     position_keys = ["IterationId", "MatchId", "TeamId", "PlayerId", "Position"]
     rows = _pivot_long_kpis(long_values, position_keys, "KpiId", "KpiValue")
     if rows.empty:
-        return _empty_defensive_player_match_sums()
+        return _event_defensive_player_match_sums(contexts, iteration_ids)
     meta = (
         long_values.groupby(position_keys, dropna=False, observed=True)
         .agg(

@@ -16,9 +16,11 @@ from utils import team_analysis as ta
 
 
 DEFENSIVE_SOURCE = (
-    "Team and player totals come from CAFC_DB Impect match-level KPI facts. Pitch "
-    "locations and post-regain sequences come from provider events through the app's "
-    "event adapter. No aggregated iteration-average table is used."
+    "Team and player totals come from CAFC_DB Impect match-level KPI facts where "
+    "available. If a new iteration has raw events before those KPI facts are "
+    "backfilled, the app reconstructs the defensive totals from provider event "
+    "KPIs. Pitch locations and post-regain sequences come from provider events "
+    "through the app's event adapter. No aggregated iteration-average table is used."
 )
 
 SNAPSHOT_METRICS = [
