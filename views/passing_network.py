@@ -108,7 +108,12 @@ with metric_cols[4]:
 ma.section_heading("Network controls")
 control_cols = st.columns(2)
 max_count = int(pd.to_numeric(network["Pass Count"], errors="coerce").max()) if not network.empty else 2
-min_passes = control_cols[0].slider("Minimum link passes", 1, max(max_count, 2), min(3, max(max_count, 1)))
+min_passes = control_cols[0].slider(
+    "Minimum link passes",
+    min_value=1,
+    max_value=max(max_count, 2),
+    value=1,
+)
 label = f"{team_name} pass network"
 
 ma.section_heading("Passer-to-receiver network")

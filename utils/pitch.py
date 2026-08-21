@@ -530,6 +530,11 @@ def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int
     return fig
 
 
+def _normalise_network_ids(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce")
+    return numeric.astype("Int64").astype("string")
+
+
 def passing_network(
     network: pd.DataFrame,
     team: str | None,
@@ -539,13 +544,35 @@ def passing_network(
 ) -> go.Figure:
     """Passer-to-receiver network map with player average positions and link strengths."""
     edges = network.copy()
+
     if team:
         edges = edges[edges["Team"].astype(str) == str(team)]
 
-    for col in ["Passer X", "Passer Y", "Receiver X", "Receiver Y", "Pass Count"]:
-        if col in edges:
-            edges[col] = pd.to_numeric(edges[col], errors="coerce")
-    edges = edges.dropna(subset=["Passer X", "Passer Y", "Receiver X", "Receiver Y", "Pass Count"])
+    numeric_cols = [
+        "Passer X",
+        "Passer Y",
+        "Receiver X",
+        "Receiver Y",
+        "Pass Count",
+    ]
+
+    for col in numeric_cols:
+        edges[col] = pd.to_numeric(edges[col], errors="coerce")
+
+    edges = edges.dropna(
+        subset=[
+            "PlayerId",
+            "ReceiverId",
+            "Passer X",
+            "Passer Y",
+            "Receiver X",
+            "Receiver Y",
+            "Pass Count",
+        ]
+    ).copy()
+
+    edges["PlayerId"] = _normalise_network_ids(edges["PlayerId"])
+    edges["ReceiverId"] = _normalise_network_ids(edges["ReceiverId"])
 
     # Calculate nodes from the full team network to ensure stable tactical positions
     nodes = _network_nodes(edges)
@@ -555,13 +582,16 @@ def passing_network(
         return fig
 
     # To make the network actionable, we connect player dots and combine bidirectional links.
-    node_map = nodes.set_index("NodeId").to_dict("index")
+    node_map = {
+        str(node_id): node
+        for node_id, node in nodes.set_index("NodeId").to_dict("index").items()
+    }
 
     # Filter and aggregate edges for display
     plot_links = edges[edges["Pass Count"] >= min_passes].copy()
     if not plot_links.empty:
-        plot_links["_P1"] = plot_links["PlayerId"].astype(str)
-        plot_links["_P2"] = plot_links["ReceiverId"].astype(str)
+        plot_links["_P1"] = plot_links["PlayerId"].astype("string")
+        plot_links["_P2"] = plot_links["ReceiverId"].astype("string")
         plot_links["_Pair"] = plot_links.apply(lambda r: tuple(sorted([r["_P1"], r["_P2"]])), axis=1)
 
         combined = plot_links.groupby("_Pair").agg(
