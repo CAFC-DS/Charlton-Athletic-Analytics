@@ -176,8 +176,21 @@ _EVENT_DEFENSIVE_KPI_KEYS = {
     "Ground Duels Lost": "LOST_GROUND_DUELS",
     "Aerial Duels Won": "WON_AERIAL_DUELS",
     "Aerial Duels Lost": "LOST_AERIAL_DUELS",
+    "Presses": "NUMBER_OF_PRESSES",
+    "Counterpresses": "NUMBER_OF_PRESSES_COUNTER_PRESS",
+    "Build-Up Presses": "NUMBER_OF_PRESSES_BUILD_UP",
+    "Between-Lines Presses": "NUMBER_OF_PRESSES_BETWEEN_THE_LINES",
     "Goals": "GOALS",
     "Shot xG": "SHOT_XG",
+}
+
+_EVENT_NESTED_DEFENSIVE_KPI_COLUMNS = {
+    "Ground Duels Lost",
+    "Aerial Duels Lost",
+    "Presses",
+    "Counterpresses",
+    "Build-Up Presses",
+    "Between-Lines Presses",
 }
 
 # Impect's ACTION values for an open-play cross, both nested under ACTION_TYPE='PASS'.
@@ -2393,19 +2406,25 @@ def _load_defensive_event_rows(
     if rows.empty:
         return pd.DataFrame(columns=columns)
 
-    # In duel events the winner is normally EVENT_KPIS[0], while the losing
-    # player's LOST_GROUND_DUELS / LOST_AERIAL_DUELS value can be stored in a
-    # later array element. Add those nested player records back to the event
-    # stream so squad and player aggregates do not report every duel as won.
-    loss_kpi_select = ",\n            ".join(
+    # In duel and pressure events the relevant player can be stored in a later
+    # EVENT_KPIS array element. Add those nested player records back to the
+    # event stream so squad and player aggregates use both duel outcomes and
+    # provider-defined pressure counts rather than the generic event Pressure
+    # intensity field.
+    nested_kpi_select = ",\n            ".join(
         (
             f'TRY_TO_DOUBLE(f.VALUE:"{json_key}"::STRING) AS "{output_column}"'
-            if output_column in {"Ground Duels Lost", "Aerial Duels Lost"}
+            if output_column in _EVENT_NESTED_DEFENSIVE_KPI_COLUMNS
             else f'CAST(0 AS FLOAT) AS "{output_column}"'
         )
         for output_column, json_key in _EVENT_DEFENSIVE_KPI_KEYS.items()
     )
-    nested_duel_rows = get_connection().query(
+    nested_kpi_conditions = "\n                  OR ".join(
+        f'TRY_TO_DOUBLE(f.VALUE:"{json_key}"::STRING) > 0'
+        for output_column, json_key in _EVENT_DEFENSIVE_KPI_KEYS.items()
+        if output_column in _EVENT_NESTED_DEFENSIVE_KPI_COLUMNS
+    )
+    nested_kpi_rows = get_connection().query(
         f"""
         WITH player_teams AS (
             SELECT
@@ -2419,7 +2438,7 @@ def _load_defensive_event_rows(
               AND SQUAD_ID IS NOT NULL
               AND PLAYER_ID IS NOT NULL
             GROUP BY ITERATION_ID, MATCH_ID, PLAYER_ID
-        ), nested_duels AS (
+        ), nested_kpis AS (
             SELECT
                 e.ITERATION_ID AS "IterationId",
                 e.MATCH_ID AS "MatchId",
@@ -2435,7 +2454,7 @@ def _load_defensive_event_rows(
                 e.START_DETAIL:"adjCoordinates":"x"::FLOAT AS "Start X",
                 e.START_DETAIL:"adjCoordinates":"y"::FLOAT AS "Start Y",
                 e.START_DETAIL:"lane"::STRING AS "Start Lane",
-                {loss_kpi_select}
+                {nested_kpi_select}
             FROM {relation("impect_events")} e,
                  LATERAL FLATTEN(INPUT => e.EVENT_KPIS) f
             WHERE e.ITERATION_ID IN ({placeholders})
@@ -2445,8 +2464,7 @@ def _load_defensive_event_rows(
               AND TRY_TO_NUMBER(f.VALUE:"playerId"::STRING) IS NOT NULL
               AND TRY_TO_NUMBER(f.VALUE:"playerId"::STRING) <> e.PLAYER_ID
               AND (
-                  TRY_TO_DOUBLE(f.VALUE:"LOST_GROUND_DUELS"::STRING) > 0
-                  OR TRY_TO_DOUBLE(f.VALUE:"LOST_AERIAL_DUELS"::STRING) > 0
+                  {nested_kpi_conditions}
               )
         )
         SELECT
@@ -2466,7 +2484,7 @@ def _load_defensive_event_rows(
             d."Start Y",
             d."Start Lane",
             {", ".join(f'd."{column}"' for column in _EVENT_DEFENSIVE_KPI_KEYS)}
-        FROM nested_duels d
+        FROM nested_kpis d
         INNER JOIN player_teams p
             ON p."IterationId" = d."IterationId"
            AND p."MatchId" = d."MatchId"
@@ -2475,8 +2493,8 @@ def _load_defensive_event_rows(
         params=_snowflake_params([*iteration_ids, *iteration_ids]),
         ttl="30m",
     )
-    if not nested_duel_rows.empty:
-        rows = pd.concat([rows, nested_duel_rows], ignore_index=True, sort=False)
+    if not nested_kpi_rows.empty:
+        rows = pd.concat([rows, nested_kpi_rows], ignore_index=True, sort=False)
 
     matches, squads, _ = _match_dimensions(contexts)
     home = squads.rename(columns={"TeamId": "HomeTeamId", "Team": "Home"})
@@ -2494,11 +2512,10 @@ def _load_defensive_event_rows(
     rows["Action Type"] = rows["Action Type"].fillna("").astype(str).str.upper()
     rows["Action"] = rows["Action"].fillna("").astype(str).str.upper()
     rows["Start Lane"] = rows["Start Lane"].fillna("").astype(str).str.upper()
-    rows["_Pressure Event"] = rows["Pressure"].gt(0)
+    rows["_Pressure Event"] = rows["Presses"].gt(0)
     rows["_Counterpress"] = rows["_Pressure Event"] & rows["Phase"].eq("ATTACKING_TRANSITION")
     rows["_Build-Up Press"] = rows["_Pressure Event"] & rows["Phase"].eq("IN_POSSESSION")
     rows["_Between-Lines Press"] = False
-    rows["_Goal"] = rows["Action Type"].eq("GOAL") | rows["Action"].eq("GOAL")
     return rows
 
 
@@ -2510,7 +2527,6 @@ def _event_defensive_group_aggregations(events: pd.DataFrame, group_columns: lis
     aggregations = {column: (column, "sum") for column in _EVENT_DEFENSIVE_KPI_KEYS}
     aggregations.update(
         {
-            "Presses": ("_Pressure Event", "sum"),
             "Counterpresses": ("_Counterpress", "sum"),
             "Build-Up Presses": ("_Build-Up Press", "sum"),
             "Between-Lines Presses": ("_Between-Lines Press", "sum"),
