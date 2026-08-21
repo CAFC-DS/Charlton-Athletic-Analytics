@@ -2393,6 +2393,91 @@ def _load_defensive_event_rows(
     if rows.empty:
         return pd.DataFrame(columns=columns)
 
+    # In duel events the winner is normally EVENT_KPIS[0], while the losing
+    # player's LOST_GROUND_DUELS / LOST_AERIAL_DUELS value can be stored in a
+    # later array element. Add those nested player records back to the event
+    # stream so squad and player aggregates do not report every duel as won.
+    loss_kpi_select = ",\n            ".join(
+        (
+            f'TRY_TO_DOUBLE(f.VALUE:"{json_key}"::STRING) AS "{output_column}"'
+            if output_column in {"Ground Duels Lost", "Aerial Duels Lost"}
+            else f'CAST(0 AS FLOAT) AS "{output_column}"'
+        )
+        for output_column, json_key in _EVENT_DEFENSIVE_KPI_KEYS.items()
+    )
+    nested_duel_rows = get_connection().query(
+        f"""
+        WITH player_teams AS (
+            SELECT
+                ITERATION_ID AS "IterationId",
+                MATCH_ID AS "MatchId",
+                PLAYER_ID AS "PlayerId",
+                ANY_VALUE(SQUAD_ID) AS "TeamId",
+                ANY_VALUE(PLAYER_POSITION) AS "Position"
+            FROM {relation("impect_events")}
+            WHERE ITERATION_ID IN ({placeholders})
+              AND SQUAD_ID IS NOT NULL
+              AND PLAYER_ID IS NOT NULL
+            GROUP BY ITERATION_ID, MATCH_ID, PLAYER_ID
+        ), nested_duels AS (
+            SELECT
+                e.ITERATION_ID AS "IterationId",
+                e.MATCH_ID AS "MatchId",
+                TRY_TO_NUMBER(f.VALUE:"playerId"::STRING) AS "PlayerId",
+                e.PLAYER_ID AS "RowPlayerId",
+                e.PERIOD_ID AS "Period",
+                e.GAME_TIME_IN_SEC AS "Second",
+                e.ACTION_TYPE AS "Action Type",
+                e.ACTION AS "Action",
+                e.PHASE AS "Phase",
+                e.RESULT AS "Result",
+                NULL AS "Pressure",
+                e.START_DETAIL:"adjCoordinates":"x"::FLOAT AS "Start X",
+                e.START_DETAIL:"adjCoordinates":"y"::FLOAT AS "Start Y",
+                e.START_DETAIL:"lane"::STRING AS "Start Lane",
+                {loss_kpi_select}
+            FROM {relation("impect_events")} e,
+                 LATERAL FLATTEN(INPUT => e.EVENT_KPIS) f
+            WHERE e.ITERATION_ID IN ({placeholders})
+              AND e.SQUAD_ID IS NOT NULL
+              AND e.PLAYER_ID IS NOT NULL
+              AND f.INDEX > 0
+              AND TRY_TO_NUMBER(f.VALUE:"playerId"::STRING) IS NOT NULL
+              AND TRY_TO_NUMBER(f.VALUE:"playerId"::STRING) <> e.PLAYER_ID
+              AND (
+                  TRY_TO_DOUBLE(f.VALUE:"LOST_GROUND_DUELS"::STRING) > 0
+                  OR TRY_TO_DOUBLE(f.VALUE:"LOST_AERIAL_DUELS"::STRING) > 0
+              )
+        )
+        SELECT
+            d."IterationId",
+            d."MatchId",
+            p."TeamId",
+            d."PlayerId",
+            p."Position",
+            d."Period",
+            d."Second",
+            d."Action Type",
+            d."Action",
+            d."Phase",
+            d."Result",
+            d."Pressure",
+            d."Start X",
+            d."Start Y",
+            d."Start Lane",
+            {", ".join(f'd."{column}"' for column in _EVENT_DEFENSIVE_KPI_KEYS)}
+        FROM nested_duels d
+        INNER JOIN player_teams p
+            ON p."IterationId" = d."IterationId"
+           AND p."MatchId" = d."MatchId"
+           AND p."PlayerId" = d."PlayerId"
+        """,
+        params=_snowflake_params([*iteration_ids, *iteration_ids]),
+        ttl="30m",
+    )
+    if not nested_duel_rows.empty:
+        rows = pd.concat([rows, nested_duel_rows], ignore_index=True, sort=False)
+
     matches, squads, _ = _match_dimensions(contexts)
     home = squads.rename(columns={"TeamId": "HomeTeamId", "Team": "Home"})
     away = squads.rename(columns={"TeamId": "AwayTeamId", "Team": "Away"})
