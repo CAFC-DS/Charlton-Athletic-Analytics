@@ -4,6 +4,8 @@
 # Wires every page into the sidebar, grouped as Team Analysis, Player Analysis,
 # Match Analysis, and Data Hub.
 # =============================================================================
+
+import hmac
 import streamlit as st
 
 from utils import data, ui
@@ -13,6 +15,137 @@ page_icon = str(ui.BADGE_PATH) if ui.BADGE_PATH.exists() else ":material/shield:
 st.set_page_config(page_title="Charlton Analytics", page_icon=page_icon, layout="wide")
 
 ui.apply_statsearch_theme()
+
+
+def require_cafc_login() -> None:
+    if st.session_state.get("cafc_authenticated", False):
+        return
+
+    try:
+        auth = st.secrets["auth"]
+        expected_username = str(auth["username"])
+        expected_password = str(auth["password"])
+    except Exception:
+        st.error(
+            "Login is not configured. Add the [auth] section to "
+            ".streamlit/secrets.toml and the deployed app secrets."
+        )
+        st.stop()
+
+    st.markdown(
+        """
+        <style>
+        .cafc-login-brand {
+            max-width: 560px;
+            margin: 7vh auto 0;
+            padding: 30px 28px 20px;
+            text-align: center;
+            color: #ffffff;
+            border-top: 6px solid #c30017;
+            border-radius: 14px 14px 0 0;
+            background: linear-gradient(135deg, #111111 0%, #4b1118 58%, #9c0214 145%);
+            box-shadow: 0 14px 34px rgba(16, 24, 40, 0.18);
+        }
+
+        .cafc-login-badge {
+            width: 92px;
+            height: 92px;
+            object-fit: contain;
+            margin-bottom: 12px;
+        }
+        .cafc-login-eyebrow {
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+        }
+
+        .cafc-login-title {
+            margin-top: 8px;
+            font-size: 2rem;
+            font-weight: 900;
+        }
+
+        .cafc-login-subtitle {
+            margin-top: 8px;
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        div[data-testid="stForm"] {
+            border: 1px solid #d8dde6;
+            border-top: 0;
+            border-radius: 0 0 14px 14px;
+            padding: 1rem 1.5rem 1.5rem;
+            background: #ffffff;
+            box-shadow: 0 14px 34px rgba(16, 24, 40, 0.10);
+        }
+
+        .cafc-login-note {
+            margin-top: 14px;
+            text-align: center;
+            color: #667085;
+            font-size: 0.82rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, login_col, _ = st.columns([1, 1.1, 1])
+
+    with login_col:
+        st.markdown(
+            f"""
+            <div class="cafc-login-brand">
+                {ui.badge_html("cafc-login-badge", "Charlton Athletic crest")}
+                <div class="cafc-login-eyebrow">CHARLTON ATHLETIC</div>
+                <div class="cafc-login-title">CAFC Analytics</div>
+                <div class="cafc-login-subtitle">Private analyst access</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form("cafc_login_form"):
+            username = st.text_input(
+                "Username",
+                placeholder="CAFC_Analysts",
+                key="cafc_login_username",
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                key="cafc_login_password",
+            )
+            submitted = st.form_submit_button(
+                "Sign in",
+                type="primary",
+                width="stretch",
+            )
+
+        if submitted:
+            username_ok = hmac.compare_digest(
+                str(username).strip(),
+                expected_username,
+            )
+            password_ok = hmac.compare_digest(
+                str(password),
+                expected_password,
+            )
+
+            if username_ok and password_ok:
+                st.session_state["cafc_authenticated"] = True
+                st.rerun()
+
+            st.error("Incorrect username or password.")
+
+        st.markdown(
+            '<div class="cafc-login-note">Authorised CAFC analysts only.</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.stop()
+
+require_cafc_login()
 
 if ui.BADGE_PATH.exists():
     st.sidebar.markdown(
