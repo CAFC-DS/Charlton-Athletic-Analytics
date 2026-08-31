@@ -21,10 +21,13 @@ def require_cafc_login() -> None:
     if st.session_state.get("cafc_authenticated", False):
         return
 
+    def normalize_login_value(value: object) -> str:
+        return str(value).strip().strip('"').strip("'").strip()
+
     try:
         auth = st.secrets["auth"]
-        expected_username = str(auth["username"]).strip()
-        expected_password = str(auth["password"]).strip()
+        expected_username = normalize_login_value(auth["username"])
+        expected_password = normalize_login_value(auth["password"])
     except Exception:
         st.error(
             "Login is not configured. Add the [auth] section to "
@@ -124,11 +127,11 @@ def require_cafc_login() -> None:
 
         if submitted:
             username_ok = hmac.compare_digest(
-                str(username).strip(),
+                normalize_login_value(username),
                 expected_username,
             )
             password_ok = hmac.compare_digest(
-                str(password).strip(),
+                normalize_login_value(password),
                 expected_password,
             )
 
