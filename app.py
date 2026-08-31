@@ -111,6 +111,10 @@ def require_cafc_login() -> None:
             box-shadow: 0 14px 34px rgba(16, 24, 40, 0.10);
         }
 
+        div[data-testid="stForm"] [data-testid="InputInstructions"] {
+            display: none !important;
+        }
+
         .cafc-login-note {
             margin-top: 14px;
             text-align: center;
