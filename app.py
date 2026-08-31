@@ -25,7 +25,7 @@ def require_cafc_login() -> None:
         return str(value).strip().strip('"').strip("'").strip()
 
     fallback_username = "CAFC_Analysts"
-    fallback_password = "Promotion_26/27"
+    fallback_password = "Super_Addicks26/27"
     accepted_credentials = {(fallback_username, fallback_password)}
 
     try:
