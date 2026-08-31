@@ -5,10 +5,9 @@
 # Match Analysis, and Data Hub.
 # =============================================================================
 
-import hmac
 import streamlit as st
 
-from utils import data, ui
+from utils import auth, data, ui
 
 
 page_icon = str(ui.BADGE_PATH) if ui.BADGE_PATH.exists() else ":material/shield:"
@@ -17,27 +16,41 @@ st.set_page_config(page_title="Charlton Analytics", page_icon=page_icon, layout=
 ui.apply_statsearch_theme()
 
 
+AUTHENTICATED_KEY = "cafc_authenticated"
+AUTH_REVISION_KEY = "cafc_auth_revision"
+
+
+def clear_cafc_auth_session() -> None:
+    for key in (
+        AUTHENTICATED_KEY,
+        AUTH_REVISION_KEY,
+        "cafc_login_username",
+        "cafc_login_password",
+        "cafc_login_username_v2",
+        "cafc_login_password_v2",
+    ):
+        st.session_state.pop(key, None)
+
+
 def require_cafc_login() -> None:
-    if st.session_state.get("cafc_authenticated", False):
-        return
-
-    def normalize_login_value(value: object) -> str:
-        return str(value).strip().strip('"').strip("'").strip()
-
-    fallback_username = "CAFC_Analysts"
-    fallback_password = "Super_Addicks26/27"
-    accepted_credentials = {(fallback_username, fallback_password)}
-
     try:
-        auth = st.secrets["auth"]
-        accepted_credentials.add(
-            (
-                normalize_login_value(auth["username"]),
-                normalize_login_value(auth["password"]),
-            )
-        )
-    except Exception:
-        pass
+        auth_config = auth.load_auth_config(st.secrets)
+        config_error = None
+    except auth.AuthConfigError as exc:
+        auth_config = None
+        config_error = str(exc)
+
+    if auth_config is not None:
+        authenticated = st.session_state.get(AUTHENTICATED_KEY, False)
+        session_revision = st.session_state.get(AUTH_REVISION_KEY)
+        if authenticated and session_revision == auth_config.revision:
+            return
+
+        # A password change must invalidate sessions authenticated with the old one.
+        if authenticated or session_revision is not None:
+            clear_cafc_auth_session()
+    else:
+        clear_cafc_auth_session()
 
     st.markdown(
         """
@@ -112,42 +125,48 @@ def require_cafc_login() -> None:
             unsafe_allow_html=True,
         )
 
-        with st.form("cafc_login_form"):
-            username = st.text_input(
-                "Username",
-                placeholder="CAFC_Analysts",
-                key="cafc_login_username",
+        if auth_config is None:
+            st.error("Login is unavailable because authentication is not configured correctly.")
+            st.caption(
+                f"Owner diagnostics: {config_error}. Add quoted username and password "
+                f"values under [auth] in Streamlit secrets, then reboot the app."
             )
-            password = st.text_input(
-                "Password",
-                type="password",
-                key="cafc_login_password",
-            )
-            submitted = st.form_submit_button(
-                "Sign in",
-                type="primary",
-                width="stretch",
-            )
+        else:
+            with st.form("cafc_login_form_v2", clear_on_submit=True):
+                # This is a single-account app. Keeping the configured username fixed
+                # prevents placeholder text from being mistaken for an entered value.
+                st.text_input(
+                    "Username",
+                    value=auth_config.username,
+                    disabled=True,
+                    key="cafc_login_username_v2",
+                )
+                password = st.text_input(
+                    "Password",
+                    type="password",
+                    key="cafc_login_password_v2",
+                )
+                submitted = st.form_submit_button(
+                    "Sign in",
+                    type="primary",
+                    width="stretch",
+                )
 
-        if submitted:
-            submitted_username = normalize_login_value(username)
-            submitted_password = normalize_login_value(password)
-            login_ok = any(
-                hmac.compare_digest(submitted_username, expected_username)
-                and hmac.compare_digest(submitted_password, expected_password)
-                for expected_username, expected_password in accepted_credentials
-            )
-
-            if login_ok:
-                st.session_state["cafc_authenticated"] = True
-                st.rerun()
-
-            st.error("Incorrect username or password.")
+            if submitted:
+                if not password.strip():
+                    st.warning("Enter your password.")
+                elif auth.credentials_match(auth_config, auth_config.username, password):
+                    st.session_state[AUTHENTICATED_KEY] = True
+                    st.session_state[AUTH_REVISION_KEY] = auth_config.revision
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
 
         st.markdown(
             '<div class="cafc-login-note">Authorised CAFC analysts only.</div>',
             unsafe_allow_html=True,
         )
+        st.caption(f"{auth.AUTH_BUILD} · secrets {'loaded' if auth_config else 'not loaded'}")
 
     st.stop()
 
@@ -158,6 +177,10 @@ if ui.BADGE_PATH.exists():
         f'<div class="cafc-sidebar-brand">{ui.badge_html("cafc-sidebar-badge", "Charlton Athletic crest")}</div>',
         unsafe_allow_html=True,
     )
+
+if st.sidebar.button("Log out", icon=":material/logout:", width="stretch"):
+    clear_cafc_auth_session()
+    st.rerun()
 
 if data.USE_MOCK_DATA:
     st.sidebar.error("DEMO DATA MODE")
