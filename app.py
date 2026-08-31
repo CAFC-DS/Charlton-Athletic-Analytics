@@ -14,7 +14,19 @@ page_icon = str(ui.BADGE_PATH) if ui.BADGE_PATH.exists() else ":material/shield:
 st.set_page_config(page_title="Charlton Analytics", page_icon=page_icon, layout="wide")
 
 ui.apply_statsearch_theme()
-
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"] a[href$="substitution-impact"] {
+        pointer-events: none !important;
+        opacity: 0.38 !important;
+        filter: grayscale(1) !important;
+        text-decoration: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 AUTHENTICATED_KEY = "cafc_authenticated"
 AUTH_REVISION_KEY = "cafc_auth_revision"
@@ -235,7 +247,12 @@ match_pages = [
     st.Page("views/defensive_actions_map.py", title="Defensive Actions Map", icon=":material/shield:"),
     st.Page("views/player_match_actions.py", title="Player Match Actions", icon=":material/person:"),
     st.Page("views/player_match_ratings.py", title="Player Match Ratings", icon=":material/star:"),
-    st.Page("views/substitution_impact.py", title="Substitution Impact", icon=":material/swap_horiz:"),
+    st.Page(
+        "views/substitution_impact.py",
+        title="Substitution Impact",
+        icon=":material/construction:",
+        url_path="substitution-impact",
+    ),
     st.Page("views/event_data_table.py", title="Event Data Table", icon=":material/table:"),
 ]
 
@@ -247,6 +264,44 @@ data_hub_pages = [
     st.Page("views/metric_glossary.py", title="Metric Glossary", icon=":material/menu_book:"),
     st.Page("views/export_data.py", title="Export Data", icon=":material/download:"),
 ]
+
+# Search page titles and navigation sections from a native fuzzy-search box.
+# Work-in-progress pages remain visible in navigation but are excluded here.
+disabled_search_pages = {"substitution-impact"}
+page_search_options = {}
+
+for section, pages in {
+    "Home": [home],
+    "Team Analysis": team_pages,
+    "Player Analysis": player_pages,
+    "Match Analysis": match_pages,
+    "Data Hub": data_hub_pages,
+}.items():
+    for page in pages:
+        if page.url_path not in disabled_search_pages:
+            page_search_options[f"{page.title} · {section}"] = page
+
+
+def open_page_from_search() -> None:
+    selected_label = st.session_state.get("platform_page_search")
+    if not selected_label:
+        return
+
+    selected_page = page_search_options[selected_label]
+    st.session_state["platform_page_search"] = None
+    st.switch_page(selected_page)
+
+
+st.sidebar.selectbox(
+    "Search platform",
+    options=list(page_search_options),
+    index=None,
+    placeholder="Search pages and tools...",
+    key="platform_page_search",
+    on_change=open_page_from_search,
+    filter_mode="fuzzy",
+    width="stretch",
+)
 
 pg = st.navigation(
     {
