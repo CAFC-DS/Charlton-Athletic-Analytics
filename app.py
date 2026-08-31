@@ -23,8 +23,8 @@ def require_cafc_login() -> None:
 
     try:
         auth = st.secrets["auth"]
-        expected_username = str(auth["username"])
-        expected_password = str(auth["password"])
+        expected_username = str(auth["username"]).strip()
+        expected_password = str(auth["password"]).strip()
     except Exception:
         st.error(
             "Login is not configured. Add the [auth] section to "
@@ -128,7 +128,7 @@ def require_cafc_login() -> None:
                 expected_username,
             )
             password_ok = hmac.compare_digest(
-                str(password),
+                str(password).strip(),
                 expected_password,
             )
 
