@@ -300,12 +300,19 @@ def _outcome_chart(outcome_summary: pd.DataFrame, title: str) -> go.Figure:
     return charting.polish_figure(fig, title, height=360)
 
 
-def _crossing_type_chart(crosses: pd.DataFrame, title: str) -> go.Figure:
+_CROSSING_VISUAL_HEIGHT = 500
+
+
+def _crossing_type_chart(
+    crosses: pd.DataFrame,
+    title: str,
+    height: int = _CROSSING_VISUAL_HEIGHT,
+) -> go.Figure:
     fig = go.Figure()
     summary = ft.cross_type_summary(crosses)
     if summary.empty:
         fig.add_annotation(text="No crossing data", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
-        return charting.polish_figure(fig, title, height=430)
+        return charting.polish_figure(fig, title, height=height)
 
     for outcome in ft.CROSS_OUTCOME_ORDER:
         attempts: list[int] = []
@@ -347,10 +354,25 @@ def _crossing_type_chart(crosses: pd.DataFrame, title: str) -> go.Figure:
         bargap=0.3,
     )
     fig.update_yaxes(tickformat=".0f")
-    fig = charting.polish_figure(fig, title, height=430)
+    fig = charting.polish_figure(fig, title, height=height)
     fig.update_layout(
-        legend=dict(orientation="h", yanchor="top", y=-0.17, xanchor="left", x=0, title_text="Outcome"),
-        margin=dict(l=42, r=28, t=76, b=90),
+        title=dict(
+            text=title,
+            font=dict(size=19, color=ui.CHARLTON_BLACK),
+            x=0.01,
+            xanchor="left",
+            y=0.98,
+            yanchor="top",
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.03,
+            xanchor="left",
+            x=0,
+            title_text="Outcome",
+        ),
+        margin=dict(l=42, r=28, t=104, b=58),
     )
     return fig
 
@@ -976,15 +998,26 @@ crossing_cols[5].metric(
 if crosses.empty:
     st.info("No open-play cross events are available for the selected team and matches.")
 else:
-    cross_map_col, cross_type_col = st.columns([1.15, 1])
+    cross_map_col, cross_type_col = st.columns(2, gap="medium")
     with cross_map_col:
+        cross_map_figure = pitch.pass_map(
+            crosses,
+            team_name,
+            f"{team_name}: Cross Delivery Map",
+            max_passes=1200,
+            height=_CROSSING_VISUAL_HEIGHT,
+        )
         st.plotly_chart(
-            pitch.pass_map(crosses, team_name, f"{team_name}: Cross Delivery Map", max_passes=1200),
+            cross_map_figure,
             width="stretch",
         )
     with cross_type_col:
         st.plotly_chart(
-            _crossing_type_chart(crosses, f"{team_name}: Cross Type and Outcome"),
+            _crossing_type_chart(
+                crosses,
+                f"{team_name}: Cross Type and Outcome",
+                height=_CROSSING_VISUAL_HEIGHT,
+            ),
             width="stretch",
         )
 

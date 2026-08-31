@@ -1242,10 +1242,16 @@ def comparison_chart(players: pd.DataFrame, player_names: list[object]) -> go.Fi
         bargap=0.18,
     )
     fig.update_yaxes(tickformat=".0f")
-    fig.update_xaxes(categoryorder="array", categoryarray=metric_order, tickfont=dict(size=12, color=DARK), tickangle=0)
+    fig.update_xaxes(
+        categoryorder="array",
+        categoryarray=metric_order,
+        tickfont=dict(size=11, color=DARK),
+        tickangle=-35,
+        automargin=True,
+    )
     fig = polish_figure(fig, "Player Percentile Comparison")
     fig.update_layout(
-        margin=dict(l=42, r=42, t=90, b=150),
+        margin=dict(l=42, r=42, t=90, b=190),
         legend_title_text="",
         legend=dict(
             orientation="h",

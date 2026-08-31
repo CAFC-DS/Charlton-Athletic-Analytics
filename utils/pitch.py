@@ -456,7 +456,13 @@ SHOT_TYPE_SYMBOLS = {
 }
 
 
-def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int = 450) -> go.Figure:
+def pass_map(
+    events: pd.DataFrame,
+    team: str | None,
+    title: str,
+    max_passes: int = 450,
+    height: int = 650,
+) -> go.Figure:
     passes = _spatial_events(events, require_end=True)
     if team:
         passes = passes[passes["Team"].astype(str) == str(team)]
@@ -465,7 +471,7 @@ def pass_map(events: pd.DataFrame, team: str | None, title: str, max_passes: int
         sort_col = "PXT Pass" if "PXT Pass" in passes else "Pass Distance"
         passes = passes.sort_values(sort_col, ascending=False).head(max_passes)
 
-    fig = pitch_figure(title)
+    fig = pitch_figure(title, height=height)
     if passes.empty:
         _empty_pitch_message(fig, "No pass locations")
         return fig

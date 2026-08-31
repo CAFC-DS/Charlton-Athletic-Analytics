@@ -46,9 +46,9 @@ def _overview_css() -> None:
 
         .po-card-value {
             color: #111111;
-            font-size: 1.02rem;
+            font-size: 0.92rem;
             font-weight: 800;
-            line-height: 1.2;
+            line-height: 1.15;
             margin-top: 5px;
             overflow-wrap: anywhere;
         }
