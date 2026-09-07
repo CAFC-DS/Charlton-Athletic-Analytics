@@ -1418,7 +1418,7 @@ with squad_cols[1]:
     player_metric_options = [metric for metric in data.PLAYER_PROFILE_METRICS if metric in players.columns]
     if player_metric_options:
         default_metric = "Goals /90" if "Goals /90" in player_metric_options else player_metric_options[0]
-        ranking_controls = st.columns(2)
+        ranking_controls = st.columns(3)
         player_metric = ranking_controls[0].selectbox(
             "Top players by",
             player_metric_options,
@@ -1430,12 +1430,21 @@ with squad_cols[1]:
             ["All positions", "Defenders", "Goalkeepers", "Midfielders", "Attackers"],
             key="team_overview_position_group",
         )
+        player_count = ranking_controls[2].selectbox(
+            "Players shown",
+            [3, 5],
+            format_func=lambda count: f"Top {count}",
+            key="team_overview_player_count",
+        )
         ranking_squad = _filter_overview_positions(squad, position_group)
         st.caption(
             f"Top players require at least {TOP_PLAYER_MINIMUM_MINUTES} minutes. "
             "Wingers are grouped with attackers."
         )
-        _player_cards(_top_players(ranking_squad, player_metric), player_metric)
+        _player_cards(
+            _top_players(ranking_squad, player_metric, count=player_count),
+            player_metric,
+        )
     else:
         st.info("No player metric columns are available.")
 
