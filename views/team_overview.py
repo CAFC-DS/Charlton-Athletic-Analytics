@@ -884,7 +884,7 @@ def _overview_position_group(position: object) -> str:
 
     role = pa.position_group(position)
     if role == "Goalkeeper":
-        return "Keepers"
+        return "Goalkeepers"
     if role in {"Centre Back", "Full Back"}:
         return "Defenders"
     if role in {"Defensive Midfielder", "Central Midfielder", "Attacking Midfielder"}:
@@ -1427,7 +1427,7 @@ with squad_cols[1]:
         )
         position_group = ranking_controls[1].selectbox(
             "Position group",
-            ["All positions", "Defenders", "Keepers", "Midfielders", "Attackers"],
+            ["All positions", "Defenders", "Goalkeepers", "Midfielders", "Attackers"],
             key="team_overview_position_group",
         )
         ranking_squad = _filter_overview_positions(squad, position_group)
