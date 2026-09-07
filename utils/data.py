@@ -80,6 +80,7 @@ PLAYER_KPI_IDS = {
     "Goals Conceded /90": 1460,
     "Post-Shot xG Faced /90": 1462,
     "Save Actions /90": 1517,
+    "Key Passes /90": 1780,
 }
 
 # KPI ids that are only meaningful for a goalkeeper position-stint. Used by
@@ -241,6 +242,9 @@ PLAYER_PROFILE_METRICS = [
     "Dribble Progression /90",
     "Ball Wins /90",
     "Ball Win Value /90",
+    "Ground Duels /90",
+    "Aerial Duels /90",
+    "Defensive Duels /90",
     "Ground Duel Win %",
     "Aerial Duel Win %",
     "Ball Losses /90",
@@ -248,6 +252,8 @@ PLAYER_PROFILE_METRICS = [
     "Ball Loss Threat /90",
     "Team-Mates Bypassed By Losses /90",
     "Neutral Passes /90",
+    "Key Passes /90",
+    "Long Passes (25m+) /90",
     "Ball Security %",
     "Losses Per 100 Actions",
     "Goals Prevented /90",
@@ -1100,6 +1106,9 @@ def _add_player_profile_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     ground_total = numeric("_won_ground_duels") + numeric("_lost_ground_duels")
     aerial_total = numeric("_won_aerial_duels") + numeric("_lost_aerial_duels")
+    df["Ground Duels /90"] = ground_total
+    df["Aerial Duels /90"] = aerial_total
+    df["Defensive Duels /90"] = ground_total + aerial_total
     df["Ground Duel Win %"] = (numeric("_won_ground_duels") / ground_total.replace(0, np.nan) * 100).round(1)
     df["Aerial Duel Win %"] = (numeric("_won_aerial_duels") / aerial_total.replace(0, np.nan) * 100).round(1)
     df["Goals Prevented /90"] = numeric("Post-Shot xG Faced /90") - numeric("Goals Conceded /90")
@@ -1169,6 +1178,9 @@ _EVENT_KPI_PLAYER_MAPPING: dict[int, str] = {
     1401: "POSTSHOT_XG",                    # Post-Shot xG /90
     1431: "NEUTRAL_PASSES",                 # Neutral Passes /90
     1517: "SAVE_ACTIONS",                   # Save Actions /90
+    1780: "SHOT_ASSISTS",                   # Key Passes /90
+    331: None,                              # successful passes ending in the final third
+    392: None,                              # unsuccessful passes ending in the final third
 }
 
 
@@ -1290,12 +1302,27 @@ def _compute_player_kpis_from_events(
     placeholders = ", ".join(["?"] * len(iteration_ids))
     event_kpi_mappings = _EVENT_KPI_PLAYER_MAPPING
     kpi_cols = [f"kpi_{kpi_id}" for kpi_id in event_kpi_mappings]
-    columns = ", ".join(
+    json_columns = [
         f'COALESCE(SUM(IFF(TRY_TO_NUMBER(e.EVENT_KPIS[0]:"playerId"::STRING) = e.PLAYER_ID, '
         f'TRY_TO_DOUBLE(e.EVENT_KPIS[0]:"{json_key}"::STRING), NULL)), 0) AS "kpi_{kpi_id}"'
         for kpi_id, json_key in event_kpi_mappings.items()
         if json_key is not None
-    )
+    ]
+    final_third_columns = [
+        '''COALESCE(SUM(IFF(
+            e.ACTION_TYPE = 'PASS'
+            AND e.END_DETAIL:"pitchPosition"::STRING = 'FINAL_THIRD'
+            AND UPPER(COALESCE(e.RESULT, '')) = 'SUCCESS',
+            1, 0
+        )), 0) AS "kpi_331"''',
+        '''COALESCE(SUM(IFF(
+            e.ACTION_TYPE = 'PASS'
+            AND e.END_DETAIL:"pitchPosition"::STRING = 'FINAL_THIRD'
+            AND UPPER(COALESCE(e.RESULT, '')) <> 'SUCCESS',
+            1, 0
+        )), 0) AS "kpi_392"''',
+    ]
+    columns = ", ".join([*json_columns, *final_third_columns])
     sql = f"""
         SELECT
             e.ITERATION_ID AS "IterationId",
@@ -1309,7 +1336,6 @@ def _compute_player_kpis_from_events(
             {columns}
         FROM {relation("impect_events")} e
         WHERE e.ITERATION_ID IN ({placeholders})
-          AND e.EVENT_KPIS IS NOT NULL
           AND e.SQUAD_ID IS NOT NULL
           AND e.PLAYER_ID IS NOT NULL
         GROUP BY e.ITERATION_ID, e.SQUAD_ID, e.MATCH_ID, e.PLAYER_ID, e.PLAYER_POSITION, e.PERIOD_ID
@@ -1317,6 +1343,68 @@ def _compute_player_kpis_from_events(
     raw = conn.query(sql, params=_snowflake_params(iteration_ids), ttl="1h")
     if raw.empty:
         return None
+
+    # Duel winners are stored in EVENT_KPIS[0], while the opposing losing
+    # player is stored in EVENT_KPIS[1]. Attach those losses to the losing
+    # player's own match/team/position context before calculating per-90s.
+    duel_losses = conn.query(
+        f"""
+        WITH player_context AS (
+            SELECT
+                ITERATION_ID AS "IterationId",
+                MATCH_ID AS "MatchId",
+                PERIOD_ID AS "PeriodId",
+                PLAYER_ID AS "PlayerId",
+                MAX_BY(SQUAD_ID, GAME_TIME_IN_SEC) AS "TeamId",
+                MAX_BY(PLAYER_POSITION, GAME_TIME_IN_SEC) AS "Position"
+            FROM {relation("impect_events")}
+            WHERE ITERATION_ID IN ({placeholders})
+              AND PLAYER_ID IS NOT NULL
+            GROUP BY ITERATION_ID, MATCH_ID, PERIOD_ID, PLAYER_ID
+        ), losses AS (
+            SELECT
+                e.ITERATION_ID AS "IterationId",
+                e.MATCH_ID AS "MatchId",
+                e.PERIOD_ID AS "PeriodId",
+                TRY_TO_NUMBER(item.VALUE:"playerId"::STRING) AS "PlayerId",
+                COALESCE(SUM(TRY_TO_DOUBLE(item.VALUE:"LOST_GROUND_DUELS"::STRING)), 0)
+                    AS "kpi_95_loss",
+                COALESCE(SUM(TRY_TO_DOUBLE(item.VALUE:"LOST_AERIAL_DUELS"::STRING)), 0)
+                    AS "kpi_97_loss"
+            FROM {relation("impect_events")} e,
+                 LATERAL FLATTEN(INPUT => e.EVENT_KPIS) item
+            WHERE e.ITERATION_ID IN ({placeholders})
+              AND item.INDEX > 0
+            GROUP BY e.ITERATION_ID, e.MATCH_ID, e.PERIOD_ID,
+                     TRY_TO_NUMBER(item.VALUE:"playerId"::STRING)
+        )
+        SELECT losses.*, player_context."TeamId", player_context."Position"
+        FROM losses
+        JOIN player_context
+          ON player_context."IterationId" = losses."IterationId"
+         AND player_context."MatchId" = losses."MatchId"
+         AND player_context."PeriodId" = losses."PeriodId"
+         AND player_context."PlayerId" = losses."PlayerId"
+        """,
+        params=_snowflake_params([*iteration_ids, *iteration_ids]),
+        ttl="1h",
+    )
+    if not duel_losses.empty:
+        loss_keys = [
+            "IterationId",
+            "TeamId",
+            "MatchId",
+            "PlayerId",
+            "Position",
+            "PeriodId",
+        ]
+        raw = raw.merge(duel_losses, on=loss_keys, how="left")
+        for kpi_id in (95, 97):
+            loss_column = f"kpi_{kpi_id}_loss"
+            raw[f"kpi_{kpi_id}"] = pd.to_numeric(
+                raw.get(loss_column), errors="coerce"
+            ).fillna(0.0)
+        raw = raw.drop(columns=["kpi_95_loss", "kpi_97_loss"], errors="ignore")
     for col in kpi_cols:
         if col in raw:
             raw[col] = pd.to_numeric(raw[col], errors="coerce").fillna(0)
@@ -1652,6 +1740,38 @@ def load_players(season: str | None = None) -> pd.DataFrame:
         )
         .reset_index()
     )
+
+    # Impect has no dedicated long-pass KPI. Its raw pass feed has distance in
+    # metres, so expose an explicit and auditable 25m+ per-90 measure.
+    long_passes = conn.query(
+        f"""
+        SELECT
+            ITERATION_ID AS "IterationId",
+            SQUAD_ID AS "TeamId",
+            PLAYER_ID AS "PlayerId",
+            COUNT_IF(
+                ACTION_TYPE = 'PASS'
+                AND TRY_TO_DOUBLE(PASS_DETAIL:"distance"::STRING) >= 25
+            ) AS "Long Passes"
+        FROM {relation("impect_events")}
+        WHERE ITERATION_ID IN ({", ".join(["?"] * len(iteration_ids))})
+          AND SQUAD_ID IS NOT NULL
+          AND PLAYER_ID IS NOT NULL
+        GROUP BY ITERATION_ID, SQUAD_ID, PLAYER_ID
+        """,
+        params=_snowflake_params(iteration_ids),
+        ttl="1h",
+    )
+    if not long_passes.empty:
+        players = players.merge(long_passes, on=player_keys, how="left")
+        players["Long Passes (25m+) /90"] = (
+            pd.to_numeric(players["Long Passes"], errors="coerce").fillna(0.0)
+            / pd.to_numeric(players["Play Duration Seconds"], errors="coerce").replace(0, np.nan)
+            * 5400.0
+        )
+        players = players.drop(columns="Long Passes")
+    else:
+        players["Long Passes (25m+) /90"] = np.nan
 
     groupers = [position_rows[column] for column in player_keys]
     is_goalkeeper_stint = position_rows["Position"].astype(str).str.upper().eq("GOALKEEPER")
