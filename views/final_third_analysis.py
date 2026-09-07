@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import charting, data, final_third as ft, match_analysis as ma, pitch, team_analysis as ta
+from utils import charting, data, final_third as ft, match_analysis as ma, pitch, team_analysis as ta, ui
 
 FINAL_THIRD_SOURCE = (
     "Final-third analysis uses CAFC_DB Impect provider events: adjusted start/end locations, "

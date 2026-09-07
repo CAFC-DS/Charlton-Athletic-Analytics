@@ -1685,23 +1685,60 @@ def load_players(season: str | None = None) -> pd.DataFrame:
         players = players.merge(weighted, on=player_keys, how="left")
 
     dimension_filter, dimension_ids = _iteration_filter(contexts, "ITERATION_ID")
-    player_dimensions = conn.query(
-        f"""
-        SELECT
-            ITERATION_ID AS "IterationId",
-            IMPECT_PLAYER_ID AS "PlayerId",
-            COALESCE(NULLIF(COMMON_NAME, ''), TRIM(CONCAT_WS(' ', FIRST_NAME, LAST_NAME))) AS "Player",
-            FIRST_NAME AS "First Name",
-            LAST_NAME AS "Last Name",
-            BIRTH_DATE AS "Birthdate",
-            STRONG_FOOT AS "Foot",
-            TRY_TO_NUMBER(COUNTRY_IDS[0]::STRING) AS "CountryId"
-        FROM {relation("impect_players")}
-        WHERE {dimension_filter}
-        """,
-        params=_snowflake_params(dimension_ids),
-        ttl="6h",
-    ).drop_duplicates(["IterationId", "PlayerId"])
+    player_ids = (
+        pd.to_numeric(players["PlayerId"], errors="coerce")
+        .dropna()
+        .astype(int)
+        .drop_duplicates()
+        .tolist()
+    )
+    player_id_placeholders = ", ".join(["?"] * len(player_ids))
+    preferred_iteration_placeholders = ", ".join(["?"] * len(dimension_ids))
+    player_dimension_columns = [
+        "PlayerId",
+        "Player",
+        "First Name",
+        "Last Name",
+        "Birthdate",
+        "Foot",
+        "CountryId",
+    ]
+    if player_ids:
+        player_dimensions = conn.query(
+            f"""
+            SELECT
+                IMPECT_PLAYER_ID AS "PlayerId",
+                COALESCE(
+                    NULLIF(TRIM(COMMON_NAME), ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', FIRST_NAME, LAST_NAME)), '')
+                ) AS "Player",
+                FIRST_NAME AS "First Name",
+                LAST_NAME AS "Last Name",
+                BIRTH_DATE AS "Birthdate",
+                STRONG_FOOT AS "Foot",
+                TRY_TO_NUMBER(COUNTRY_IDS[0]::STRING) AS "CountryId"
+            FROM {relation("impect_players")}
+            WHERE IMPECT_PLAYER_ID IN ({player_id_placeholders})
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY IMPECT_PLAYER_ID
+                ORDER BY
+                    IFF(
+                        COALESCE(
+                            NULLIF(TRIM(COMMON_NAME), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', FIRST_NAME, LAST_NAME)), '')
+                        ) IS NULL,
+                        1,
+                        0
+                    ),
+                    IFF(ITERATION_ID IN ({preferred_iteration_placeholders}), 0, 1),
+                    ITERATION_ID DESC
+            ) = 1
+            """,
+            params=_snowflake_params([*player_ids, *dimension_ids]),
+            ttl="6h",
+        )
+    else:
+        player_dimensions = pd.DataFrame(columns=player_dimension_columns)
     squad_dimensions = conn.query(
         f"""
         SELECT ITERATION_ID AS "IterationId", IMPECT_SQUAD_ID AS "TeamId", SQUAD_NAME AS "Team"
@@ -1723,7 +1760,7 @@ def load_players(season: str | None = None) -> pd.DataFrame:
         frame["CountryId"] = pd.to_numeric(frame["CountryId"], errors="coerce").astype("Int64")
     player_dimensions = player_dimensions.merge(countries, on="CountryId", how="left")
     players = (
-        players.merge(player_dimensions, on=["IterationId", "PlayerId"], how="left")
+        players.merge(player_dimensions, on="PlayerId", how="left")
         .merge(squad_dimensions, on=["IterationId", "TeamId"], how="left")
         .merge(contexts, on="IterationId", how="left")
     )

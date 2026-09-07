@@ -25,6 +25,19 @@ def _safe_key(value: object) -> str:
     return re.sub(r"[^a-zA-Z0-9_]+", "_", str(value)).strip("_")
 
 
+def _named_players(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return profile-safe rows with a real, normalized player name."""
+    if "Player" not in frame:
+        return frame.iloc[0:0].copy()
+
+    names = frame["Player"].astype("string").str.strip()
+    invalid_names = {"", "nan", "none", "null", "<na>", "nat"}
+    valid = names.notna() & ~names.str.casefold().isin(invalid_names)
+    result = frame.loc[valid].copy()
+    result["Player"] = names.loc[valid]
+    return result
+
+
 def _load_home_data() -> tuple[dict[str, list[str]], pd.DataFrame, pd.DataFrame]:
     try:
         seasons = data.list_seasons()
@@ -46,6 +59,12 @@ if players.empty:
     st.stop()
 
 players["_Position Display"] = players["Position"].apply(ui.clean_position) if "Position" in players else "Unknown position"
+# Provider data can contain aggregate/placeholder rows without a player name.
+# They cannot be profiled and would otherwise all receive the same `nan` widget key.
+players = _named_players(players)
+if players.empty:
+    st.warning("No named players are available for the selected data source.")
+    st.stop()
 team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
 position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
 season_options = seasons.get("players", [])
@@ -125,6 +144,7 @@ with filter_col:
     if selected_season and selected_season != preferred_home_season:
         players = data.load_players(season=selected_season).copy()
         players["_Position Display"] = players["Position"].apply(ui.clean_position) if "Position" in players else "Unknown position"
+        players = _named_players(players)
 
     mask = pd.Series(True, index=players.index)
     if search:
@@ -180,10 +200,12 @@ cards = cards.sort_values(sort_col, ascending=(sort_col == "Player")).head(6)
 
 for start in range(0, len(cards), 3):
     cols = st.columns(3)
-    for col, (_, row) in zip(cols, cards.iloc[start:start + 3].iterrows()):
+    for offset, (col, (_, row)) in enumerate(zip(cols, cards.iloc[start:start + 3].iterrows())):
         player_name = str(row["Player"])
         team_name = row.get("Team", "Unknown team")
         position = row.get("_Position Display", ui.clean_position(row.get("Position")))
+        player_identity = row.get("PlayerId", player_name)
+        card_key = f"home_card_{start + offset}_{_safe_key(player_identity)}"
         with col:
             st.markdown(
                 f"""
@@ -197,7 +219,7 @@ for start in range(0, len(cards), 3):
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button("Open profile", key=f"home_card_{_safe_key(player_name)}"):
+            if st.button("Open profile", key=card_key):
                 _open_profile(player_name)
 
 st.markdown('<div class="ss-section-label">Core analytics</div>', unsafe_allow_html=True)
