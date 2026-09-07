@@ -16,6 +16,7 @@ import streamlit as st
 from utils import data, match_analysis as ma, pitch, player_analysis as pa, team_analysis as ta, ui
 
 TEAM_BADGE_DIR = ui.ASSETS_DIR / "team_badges"
+TOP_PLAYER_MINIMUM_MINUTES = 90
 
 TEAM_BADGE_FILES = {
     "barnsley": "Barnsley_FC.svg.png",
@@ -869,9 +870,43 @@ def _position_counts(squad: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _overview_position_group(position: object) -> str:
+    """Collapse detailed Impect roles into the four analyst-facing groups."""
+    text = "" if position is None or pd.isna(position) else str(position)
+    text = text.upper().replace("_", " ")
+    tokens = set(text.replace(",", " ").split())
+    is_wingback = "WINGBACK" in text or "WING BACK" in text or bool(
+        {"LWB", "RWB", "WB"}.intersection(tokens)
+    )
+    is_winger = "WINGER" in text or bool({"LW", "RW", "LWF", "RWF", "WF"}.intersection(tokens))
+    if is_winger and not is_wingback:
+        return "Attackers"
+
+    role = pa.position_group(position)
+    if role == "Goalkeeper":
+        return "Keepers"
+    if role in {"Centre Back", "Full Back"}:
+        return "Defenders"
+    if role in {"Defensive Midfielder", "Central Midfielder", "Attacking Midfielder"}:
+        return "Midfielders"
+    if role == "Forward / Winger":
+        return "Attackers"
+    return "Other"
+
+
+def _filter_overview_positions(squad: pd.DataFrame, position_group: str) -> pd.DataFrame:
+    if squad.empty or position_group == "All positions" or "Position" not in squad:
+        return squad.copy()
+    groups = squad["Position"].apply(_overview_position_group)
+    return squad.loc[groups.eq(position_group)].copy()
+
+
 def _player_cards(players: pd.DataFrame, metric: str) -> None:
     if players.empty:
-        st.info("No player rows are available for this team and player season.")
+        st.info(
+            "No players in this position group have at least "
+            f"{TOP_PLAYER_MINIMUM_MINUTES} minutes."
+        )
         return
 
     html = []
@@ -902,6 +937,9 @@ def _top_players(squad: pd.DataFrame, metric: str, count: int = 3) -> pd.DataFra
         return pd.DataFrame()
     out = squad.copy()
     out[metric] = pd.to_numeric(out[metric], errors="coerce")
+    if "Minutes" in out:
+        minutes = pd.to_numeric(out["Minutes"], errors="coerce")
+        out = out.loc[minutes.ge(TOP_PLAYER_MINIMUM_MINUTES)]
     return out.dropna(subset=[metric]).sort_values(metric, ascending=False).head(count)
 
 
@@ -1380,8 +1418,24 @@ with squad_cols[1]:
     player_metric_options = [metric for metric in data.PLAYER_PROFILE_METRICS if metric in players.columns]
     if player_metric_options:
         default_metric = "Goals /90" if "Goals /90" in player_metric_options else player_metric_options[0]
-        player_metric = st.selectbox("Top players by", player_metric_options, index=player_metric_options.index(default_metric), key="team_overview_player_metric")
-        _player_cards(_top_players(squad, player_metric), player_metric)
+        ranking_controls = st.columns(2)
+        player_metric = ranking_controls[0].selectbox(
+            "Top players by",
+            player_metric_options,
+            index=player_metric_options.index(default_metric),
+            key="team_overview_player_metric",
+        )
+        position_group = ranking_controls[1].selectbox(
+            "Position group",
+            ["All positions", "Defenders", "Keepers", "Midfielders", "Attackers"],
+            key="team_overview_position_group",
+        )
+        ranking_squad = _filter_overview_positions(squad, position_group)
+        st.caption(
+            f"Top players require at least {TOP_PLAYER_MINIMUM_MINUTES} minutes. "
+            "Wingers are grouped with attackers."
+        )
+        _player_cards(_top_players(ranking_squad, player_metric), player_metric)
     else:
         st.info("No player metric columns are available.")
 
