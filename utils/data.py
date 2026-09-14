@@ -2488,6 +2488,72 @@ def _match_dimensions(contexts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
     return matches, squads, players
 
 
+def _load_player_name_dimensions(
+    player_ids: list[object],
+    preferred_iteration_ids: list[int],
+) -> pd.DataFrame:
+    """Resolve stable Impect player ids to the best available display name.
+
+    A newly published iteration can reference a player in the event feed before
+    that iteration's player dimension has been fully populated. Impect player
+    ids are stable between iterations, so look up only the requested ids across
+    the dimension history. Prefer a populated name, then a row from the
+    selected iteration, then the newest remaining row.
+    """
+    resolved_ids = (
+        pd.to_numeric(pd.Series(player_ids, dtype=object), errors="coerce")
+        .dropna()
+        .astype(int)
+        .drop_duplicates()
+        .tolist()
+    )
+    if not resolved_ids:
+        return pd.DataFrame(columns=["PlayerId", "Player"])
+
+    preferred_ids = list(dict.fromkeys(int(value) for value in preferred_iteration_ids))
+    player_placeholders = ", ".join(["?"] * len(resolved_ids))
+    preference_sql = ""
+    params: list[object] = [*resolved_ids]
+    if preferred_ids:
+        preferred_placeholders = ", ".join(["?"] * len(preferred_ids))
+        preference_sql = f"IFF(ITERATION_ID IN ({preferred_placeholders}), 0, 1),"
+        params.extend(preferred_ids)
+
+    names = get_connection().query(
+        f"""
+        SELECT
+            IMPECT_PLAYER_ID AS "PlayerId",
+            COALESCE(
+                NULLIF(TRIM(COMMON_NAME), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', FIRST_NAME, LAST_NAME)), '')
+            ) AS "Player"
+        FROM {relation("impect_players")}
+        WHERE IMPECT_PLAYER_ID IN ({player_placeholders})
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY IMPECT_PLAYER_ID
+            ORDER BY
+                IFF(
+                    COALESCE(
+                        NULLIF(TRIM(COMMON_NAME), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', FIRST_NAME, LAST_NAME)), '')
+                    ) IS NULL,
+                    1,
+                    0
+                ),
+                {preference_sql}
+                ITERATION_ID DESC
+        ) = 1
+        """,
+        params=_snowflake_params(params),
+        ttl="6h",
+    )
+    if names.empty:
+        return pd.DataFrame(columns=["PlayerId", "Player"])
+    names["PlayerId"] = pd.to_numeric(names["PlayerId"], errors="coerce")
+    names["Player"] = _clean_optional_text(names["Player"])
+    return names.dropna(subset=["PlayerId"]).drop_duplicates("PlayerId")[["PlayerId", "Player"]]
+
+
 def _event_defensive_kpi_expression(json_key: str) -> str:
     """Return a guarded expression for one provider event KPI value."""
     return (
@@ -3571,19 +3637,56 @@ def load_match_events(
     if events.empty:
         return _empty_match_events()
 
+    # Build a dimension containing only the actor/receiver ids returned by this
+    # event query. Prefer the selected iteration's name, but backfill a missing
+    # current-season dimension row from another iteration with the same stable
+    # Impect player id.
+    events["PlayerId"] = pd.to_numeric(events["PlayerId"], errors="coerce")
+    events["ReceiverId"] = pd.to_numeric(events["ReceiverId"], errors="coerce")
+    players["PlayerId"] = pd.to_numeric(players["PlayerId"], errors="coerce")
+    referenced_players = pd.concat(
+        [
+            events[["IterationId", "PlayerId"]],
+            events[["IterationId", "ReceiverId"]].rename(columns={"ReceiverId": "PlayerId"}),
+        ],
+        ignore_index=True,
+    ).dropna(subset=["IterationId", "PlayerId"]).drop_duplicates()
+    event_player_dimensions = referenced_players.merge(
+        players,
+        on=["IterationId", "PlayerId"],
+        how="left",
+    )
+    event_player_dimensions["Player"] = _clean_optional_text(event_player_dimensions["Player"])
+    unresolved_ids = event_player_dimensions.loc[
+        event_player_dimensions["Player"].isna(),
+        "PlayerId",
+    ].drop_duplicates().tolist()
+    if unresolved_ids:
+        fallback_names = _load_player_name_dimensions(unresolved_ids, iteration_ids).rename(
+            columns={"Player": "Fallback Player"}
+        )
+        event_player_dimensions = event_player_dimensions.merge(
+            fallback_names,
+            on="PlayerId",
+            how="left",
+        )
+        event_player_dimensions["Player"] = event_player_dimensions["Player"].fillna(
+            event_player_dimensions["Fallback Player"]
+        )
+        event_player_dimensions = event_player_dimensions.drop(columns="Fallback Player")
+
     home = squads.rename(columns={"TeamId": "HomeTeamId", "Team": "Home"})
     away = squads.rename(columns={"TeamId": "AwayTeamId", "Team": "Away"})
     team_dimensions = squads.rename(columns={"Team": "Team"})
-    receiver_dimensions = players.rename(columns={"PlayerId": "ReceiverId", "Player": "Receiver"})
-    # Normalise dtypes so merge keys are compatible
-    events["ReceiverId"] = pd.to_numeric(events["ReceiverId"], errors="coerce")
-    receiver_dimensions["ReceiverId"] = pd.to_numeric(receiver_dimensions["ReceiverId"], errors="coerce")
+    receiver_dimensions = event_player_dimensions.rename(
+        columns={"PlayerId": "ReceiverId", "Player": "Receiver"}
+    )
     events = (
         events.merge(matches, on=["IterationId", "MatchId"], how="left")
         .merge(home, on=["IterationId", "HomeTeamId"], how="left")
         .merge(away, on=["IterationId", "AwayTeamId"], how="left")
         .merge(team_dimensions, on=["IterationId", "TeamId"], how="left")
-        .merge(players, on=["IterationId", "PlayerId"], how="left")
+        .merge(event_player_dimensions, on=["IterationId", "PlayerId"], how="left")
         .merge(receiver_dimensions, on=["IterationId", "ReceiverId"], how="left")
         .merge(contexts, on="IterationId", how="left")
     )
