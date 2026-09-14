@@ -37,18 +37,20 @@ def classify_position_text(position: object) -> str | None:
     ):
         return "Full Back"
     if (
-        {"DM", "DMF", "CDM", "RDMF", "LDMF"}.intersection(tokens)
-        or "DEFENSIVE MIDFIELD" in text
-        or "DEFENSE MIDFIELD" in text
-    ):
-        return "Defensive Midfielder"
-    if (
         {"AM", "AMF", "CAM"}.intersection(tokens)
         or "ATTACKING MIDFIELD" in text
     ):
         return "Attacking Midfielder"
+    # Impect's two central-midfield codes do not split 6s from 8s in any useful
+    # proportion: across 25/26 it labelled 129 Championship players
+    # DEFENSE_MIDFIELD and only 15 CENTRAL_MIDFIELD, so a double pivot's two
+    # midfielders both land in the defensive code and the central group is too
+    # small to rank anyone against. Both sit in one peer group; the raw provider
+    # label stays on Position for anyone reading who plays where.
     if (
-        {"CM", "CMF", "LCMF", "RCMF", "MID", "MF"}.intersection(tokens)
+        {"DM", "DMF", "CDM", "RDMF", "LDMF", "CM", "CMF", "LCMF", "RCMF", "MID", "MF"}.intersection(tokens)
+        or "DEFENSIVE MIDFIELD" in text
+        or "DEFENSE MIDFIELD" in text
         or "CENTRAL MIDFIELD" in text
         or "CENTRE MIDFIELD" in text
         or "CENTER MIDFIELD" in text

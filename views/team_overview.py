@@ -887,7 +887,7 @@ def _overview_position_group(position: object) -> str:
         return "Goalkeepers"
     if role in {"Centre Back", "Full Back"}:
         return "Defenders"
-    if role in {"Defensive Midfielder", "Central Midfielder", "Attacking Midfielder"}:
+    if role in {"Central Midfielder", "Attacking Midfielder"}:
         return "Midfielders"
     if role == "Forward / Winger":
         return "Attackers"

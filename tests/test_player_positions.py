@@ -77,7 +77,7 @@ class PlayerPositionTests(unittest.TestCase):
             "CENTER_FORWARD": "Forward / Winger",
             "CENTRAL_DEFENDER": "Centre Back",
             "CENTRAL_MIDFIELD": "Central Midfielder",
-            "DEFENSE_MIDFIELD": "Defensive Midfielder",
+            "DEFENSE_MIDFIELD": "Central Midfielder",
             "GOALKEEPER": "Goalkeeper",
             "LEFT_WINGBACK_DEFENDER": "Full Back",
             "LEFT_WINGER": "Forward / Winger",
@@ -91,6 +91,57 @@ class PlayerPositionTests(unittest.TestCase):
                     positions.classify_position_text(position_code),
                     expected_group,
                 )
+
+    def test_both_impect_central_midfield_codes_share_one_peer_group(self) -> None:
+        players = pd.DataFrame(
+            [
+                {"Player": "Six", "Position": "DEFENSE_MIDFIELD"},
+                {"Player": "Eight", "Position": "CENTRAL_MIDFIELD"},
+                {"Player": "Ten", "Position": "ATTACKING_MIDFIELD"},
+            ]
+        )
+
+        grouped = player_analysis.add_position_groups(players)
+
+        self.assertEqual(
+            grouped.set_index("Player")["Role Group"].to_dict(),
+            {
+                "Six": "Central Midfielder",
+                "Eight": "Central Midfielder",
+                "Ten": "Attacking Midfielder",
+            },
+        )
+
+    def test_split_central_midfield_labels_sum_into_one_dominant_role(self) -> None:
+        position_rows = pd.DataFrame(
+            [
+                {
+                    "PlayerId": 7,
+                    "Position": "DEFENSE_MIDFIELD",
+                    "Play Duration Seconds": 3_000,
+                },
+                {
+                    "PlayerId": 7,
+                    "Position": "CENTRAL_MIDFIELD",
+                    "Play Duration Seconds": 3_400,
+                },
+                {
+                    "PlayerId": 7,
+                    "Position": "CENTER_FORWARD",
+                    "Play Duration Seconds": 4_000,
+                },
+            ]
+        )
+
+        dominant = positions.dominant_positions(position_rows, ["PlayerId"])
+
+        # 3,000s + 3,400s of central midfield outranks 4,000s up front, and the
+        # longer of the two provider labels is the one displayed.
+        self.assertEqual(dominant.loc[0, "Position"], "CENTRAL_MIDFIELD")
+        self.assertEqual(
+            positions.position_group(dominant.loc[0, "Position"]),
+            "Central Midfielder",
+        )
 
     def test_zero_duration_and_null_positions_do_not_displace_a_role(self) -> None:
         position_rows = pd.DataFrame(

@@ -88,22 +88,16 @@ ROLE_RADAR_METRICS = {
         "Cross Progression /90",
         "Dribble Progression /90",
     ],
-    "Defensive Midfielder": [
+    # One central-midfield group covers Impect's DEFENSE_MIDFIELD and
+    # CENTRAL_MIDFIELD codes, so it needs the ball-winning side of a 6 and the
+    # progression side of an 8 side by side.
+    "Central Midfielder": [
         "Ball Wins /90",
         "Ball Win Value /90",
         "Pass %",
         "Pass Progression /90",
         "Bypassed Opponents /90",
-        "Ball Security %",
-        "Ball Losses /90",
-    ],
-    "Central Midfielder": [
-        "Pass %",
-        "Successful Passes /90",
-        "Pass Progression /90",
-        "Bypassed Opponents /90",
         "Passes to Final 3rd /90",
-        "Ball Wins /90",
     ],
     "Attacking Midfielder": [
         "Assists /90",
@@ -135,8 +129,7 @@ ROLE_CATEGORY_ORDER = {
     "Goalkeeper": ["Goalkeeping", "Passing", "Progression"],
     "Centre Back": ["Defending", "Passing", "Progression", "Possession"],
     "Full Back": ["Defending", "Progression", "Passing", "Possession"],
-    "Defensive Midfielder": ["Defending", "Passing", "Progression", "Possession"],
-    "Central Midfielder": ["Passing", "Progression", "Defending", "Possession", "Attacking"],
+    "Central Midfielder": ["Defending", "Passing", "Progression", "Possession", "Attacking"],
     "Attacking Midfielder": ["Attacking", "Progression", "Passing", "Possession"],
     "Forward / Winger": ["Attacking", "Progression", "Passing", "Possession"],
     "Outfield": ["Attacking", "Progression", "Passing", "Defending", "Possession"],
