@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import charting, data, ui
+from utils import charting, data, positions, ui
 
 
 PLAYER_SOURCE = (
@@ -472,49 +472,11 @@ def metric_value(value: object, metric: str) -> str:
 
 
 def _classify_position_text(text: str) -> str | None:
-    text = f" {text.upper().replace('_', ' ')} "
-    tokens = set(text.replace(",", " ").split())
-    if "GK" in tokens or "GOALKEEPER" in tokens:
-        return "Goalkeeper"
-    if (
-        {"CB", "LCB", "RCB", "DEF"}.intersection(tokens)
-        or "CENTRE BACK" in text
-        or "CENTER BACK" in text
-        or "CENTRAL DEFENDER" in text
-        or "CENTRE DEFENDER" in text
-        or "CENTER DEFENDER" in text
-    ):
-        return "Centre Back"
-    if (
-        {"LB", "RB", "LWB", "RWB", "WB", "FB"}.intersection(tokens)
-        or "FULL BACK" in text
-        or "LEFT BACK" in text
-        or "RIGHT BACK" in text
-        or "WINGBACK" in text
-        or "WING BACK" in text
-    ):
-        return "Full Back"
-    if {"DM", "DMF", "CDM", "RDMF", "LDMF"}.intersection(tokens) or "DEFENSIVE MIDFIELD" in text or "DEFENSE MIDFIELD" in text:
-        return "Defensive Midfielder"
-    if {"AM", "AMF", "CAM"}.intersection(tokens) or "ATTACKING MIDFIELD" in text:
-        return "Attacking Midfielder"
-    if {"CM", "CMF", "LCMF", "RCMF", "MID", "MF"}.intersection(tokens) or "CENTRAL MIDFIELD" in text or "CENTRE MIDFIELD" in text:
-        return "Central Midfielder"
-    if {"CF", "ST", "FW", "FWD", "LW", "RW", "LWF", "RWF", "WF"}.intersection(tokens) or "WINGER" in text or "FORWARD" in text or "STRIKER" in text:
-        return "Forward / Winger"
-    return None
+    return positions.classify_position_text(text)
 
 
 def position_group(position: object) -> str:
-    text = "" if position is None else str(position)
-    primary = text.split(",")[0]
-    primary_group = _classify_position_text(primary)
-    if primary_group:
-        return primary_group
-    full_group = _classify_position_text(text)
-    if full_group:
-        return full_group
-    return "Outfield"
+    return positions.position_group(position)
 
 
 def add_position_groups(players: pd.DataFrame) -> pd.DataFrame:

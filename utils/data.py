@@ -27,6 +27,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.data_sources import relation
+from utils import positions
 
 # ---- DATA MODE ---------------------------------------------------------------
 _configured_data_mode = os.getenv("CHARLTON_DATA_MODE", "").strip().lower()
@@ -1724,21 +1725,20 @@ def load_players(season: str | None = None) -> pd.DataFrame:
     ).fillna(0)
 
     player_keys = ["IterationId", "TeamId", "PlayerId"]
+    # Impect can record several positions for one player. Use the role with the
+    # greatest combined playing duration so a brief cameo cannot define the
+    # player's displayed position, filters or peer group.
+    dominant_positions = positions.dominant_positions(position_rows, player_keys)
     players = (
         position_rows.groupby(player_keys, dropna=False, observed=True)
         .agg(
             **{
                 "Play Duration Seconds": ("Play Duration Seconds", "sum"),
                 "Match Share": ("Match Share", "sum"),
-                "Position": (
-                    "Position",
-                    lambda values: ", ".join(
-                        sorted({str(value) for value in values.dropna() if str(value).strip()})
-                    ),
-                ),
             }
         )
         .reset_index()
+        .merge(dominant_positions, on=player_keys, how="left")
     )
 
     # Impect has no dedicated long-pass KPI. Its raw pass feed has distance in
