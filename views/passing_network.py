@@ -3,13 +3,12 @@
 # =============================================================================
 # PASSING NETWORK - real Impect passer-to-receiver map
 # =============================================================================
-import unicodedata
-
 import pandas as pd
 import streamlit as st
 
 from utils import data
 from utils import match_analysis as ma
+from utils import pass_network as pn
 from utils import pitch
 from utils import ui
 
@@ -70,92 +69,16 @@ def _summary_card(label: str, value: object, *, text_value: bool = False) -> Non
     )
 
 
-def _player_key(value: object) -> str:
-    """Return a comparison key that is stable across Opta/Impect name variants."""
-    if value is None or pd.isna(value):
-        return ""
-    text = unicodedata.normalize("NFKD", str(value)).casefold()
-    return "".join(character for character in text if character.isalnum())
-
-
-def _same_team_label(candidate: object, target: object) -> bool:
-    candidate_key = _player_key(candidate)
-    target_key = _player_key(target)
-    if not candidate_key or not target_key:
-        return False
-    return candidate_key == target_key or candidate_key in target_key or target_key in candidate_key
-
-
-def _network_player_names(network: pd.DataFrame) -> set[str]:
-    """Return normalized names represented by either endpoint of a network link."""
-    names: set[str] = set()
-    for column in ["Player", "Receiver"]:
-        if column in network:
-            names.update(key for key in network[column].map(_player_key) if key)
-    return names
-
-
-def _fallback_starting_names(team_passes: pd.DataFrame) -> set[str]:
-    """Infer an XI when an Opta F7 lineup is unavailable.
-
-    The fallback mirrors the match-overview convention: players involved earliest
-    in the event feed are preferred, with action volume breaking ties. It is only
-    used for older fixtures without a paired Opta lineup.
-    """
-    if team_passes.empty or "Player" not in team_passes:
-        return set()
-    candidates = team_passes.dropna(subset=["Player"]).copy()
-    if candidates.empty:
-        return set()
-    candidates["_Second"] = pd.to_numeric(candidates.get("Second"), errors="coerce")
-    grouped = candidates.groupby("Player", as_index=False).agg(
-        **{
-            "First Second": ("_Second", "min"),
-            "Passes": ("Player", "size"),
-        }
-    )
-    grouped["First Second"] = grouped["First Second"].fillna(999999)
-    grouped = grouped.sort_values(
-        ["First Second", "Passes", "Player"],
-        ascending=[True, False, True],
-    ).head(11)
-    return {_player_key(name) for name in grouped["Player"] if _player_key(name)}
-
-
-def _top_network_passer_names(network: pd.DataFrame) -> set[str]:
-    """Return the eleven highest-volume passers in the visible Impect network."""
-    if network.empty or "Player" not in network or "Pass Count" not in network:
-        return set()
-    volume = network[["Player", "Pass Count"]].copy()
-    volume["Pass Count"] = pd.to_numeric(volume["Pass Count"], errors="coerce").fillna(0)
-    volume["Player Key"] = volume["Player"].map(_player_key)
-    volume = (
-        volume[volume["Player Key"].ne("")]
-        .groupby(["Player Key", "Player"], as_index=False)["Pass Count"]
-        .sum()
-        .sort_values(["Pass Count", "Player"], ascending=[False, True])
-        .head(11)
-    )
-    return set(volume["Player Key"])
-
-
 def _match_player_scopes(
     match_row: pd.Series,
     team_name: str,
     network: pd.DataFrame,
     team_passes: pd.DataFrame,
 ) -> tuple[dict[str, set[str]], str]:
-    """Build starting-XI, played-player and top-passer name sets.
-
-    Opta F7/F24 is the authoritative source for the first two scopes. The
-    network's Impect participants are always included in the played scope because
-    a player with a pass in the selected team feed necessarily appeared. This
-    also keeps the filter useful when a provider lineup is partial.
-    """
-    network_names = _network_player_names(network)
+    """Build full-match, starting-XI and top-passer network scopes."""
+    network_names = pn.network_player_names(network)
     starting_names: set[str] = set()
-    played_names: set[str] = set(network_names)
-    source_note = "Player scopes use the paired Opta lineup and substitution feed."
+    source_note = "The starting XI uses the paired Opta lineup."
 
     try:
         fixture_id = data.opta_fixture_id_for_match(match_row)
@@ -166,71 +89,29 @@ def _match_player_scopes(
 
     team_lineups = lineups[
         lineups.get("Team", pd.Series(index=lineups.index, dtype=object)).map(
-            lambda value: _same_team_label(value, team_name)
+            lambda value: pn.same_team_label(value, team_name)
         )
     ].copy() if not lineups.empty else lineups
 
     if not team_lineups.empty and "Player" in team_lineups:
-        starting_names = {
-            _player_key(name)
-            for name in team_lineups.loc[
-                team_lineups["Lineup Status"].astype(str).str.casefold().eq("start"),
-                "Player",
-            ]
-            if _player_key(name)
-        }
-        # Start players have definitely appeared. Do not add every F7
-        # substitute here: that table also contains unused bench players.
-        played_names.update(starting_names)
-
-        # F7 lists unused substitutes as well, so only add players explicitly
-        # recorded as entering by the F24 event feed.
-        try:
-            opta_events = data.load_opta_events(fixture_id, limit=50000)
-        except Exception:
-            opta_events = pd.DataFrame()
-        if not opta_events.empty and "TypeId" in opta_events and "Player" in opta_events:
-            entered = opta_events[
-                opta_events["TypeId"].eq(getattr(data, "OPTA_TYPE_PLAYER_ON", 19))
-                & opta_events.get("Team", pd.Series(index=opta_events.index, dtype=object)).map(
-                    lambda value: _same_team_label(value, team_name)
-                )
-            ]
-            played_names.update(_player_key(name) for name in entered["Player"] if _player_key(name))
+        lineup_starters = team_lineups.loc[
+            team_lineups["Lineup Status"].astype(str).str.casefold().eq("start"),
+            "Player",
+        ]
+        starting_names = pn.resolve_network_name_keys(lineup_starters, network)
     else:
-        starting_names = _fallback_starting_names(team_passes)
-        try:
-            minutes = data.load_match_player_minutes(
-                season=str(match_row.get("Season", "")),
-                match_id=match_row.get("MatchId"),
-                team=team_name,
-            )
-        except Exception:
-            minutes = pd.DataFrame()
-        if not minutes.empty and "Player" in minutes:
-            played_names.update(_player_key(name) for name in minutes["Player"] if _player_key(name))
+        starting_names = pn.fallback_starting_names(team_passes)
         source_note = "Opta lineup data was unavailable; starting XI is inferred from earliest match involvement."
 
     if not starting_names:
-        starting_names = _fallback_starting_names(team_passes)
+        starting_names = pn.fallback_starting_names(team_passes)
         source_note = "Starting XI is inferred from earliest match involvement because no Opta starting lineup was available."
-    if not played_names:
-        played_names = set(starting_names)
 
     return {
+        "Entire match": network_names,
         "Starting XI": starting_names,
-        "All players who played": played_names,
-        "Top 11 passers": _top_network_passer_names(network),
+        "Top 11 passers": pn.top_network_passer_names(network),
     }, source_note
-
-
-def _filter_network(network: pd.DataFrame, selected_names: set[str]) -> pd.DataFrame:
-    """Keep only links where both passer and receiver are in the selected scope."""
-    if network.empty or not selected_names:
-        return network.iloc[0:0].copy()
-    passer_keys = network["Player"].map(_player_key) if "Player" in network else pd.Series(False, index=network.index)
-    receiver_keys = network["Receiver"].map(_player_key) if "Receiver" in network else pd.Series(False, index=network.index)
-    return network[passer_keys.isin(selected_names) & receiver_keys.isin(selected_names)].copy()
 
 
 ma.page_header(
@@ -273,11 +154,20 @@ min_passes = control_cols[0].slider(
     max_value=max(max_count, 2),
     value=default_min_passes,
 )
-scope_options = ["Starting XI", "All players who played", "Top 11 passers"]
+scope_options = ["Entire match", "Starting XI", "Top 11 passers"]
 player_scope = control_cols[1].selectbox("Players shown", scope_options)
 player_scopes, scope_note = _match_player_scopes(match_row, team_name, network, team_passes)
 selected_names = player_scopes.get(player_scope, set())
-visible_network = _filter_network(network, selected_names)
+visible_network = (
+    network.copy()
+    if player_scope == "Entire match"
+    else pn.filter_network(network, selected_names)
+)
+represented_players = pn.network_player_count(visible_network)
+scope_detail = {
+    "Entire match": "All players with a completed pass connection are included.",
+    "Top 11 passers": "Players are ranked by completed passes made.",
+}.get(player_scope, scope_note)
 
 ma.section_heading("Selected fixture summary")
 metric_cols = st.columns(5)
@@ -293,9 +183,9 @@ with metric_cols[4]:
     _summary_card("Crosses", f"{crosses_completed}/{len(crosses)} completed", text_value=True)
 
 st.caption(
-    f"{player_scope}: {len(selected_names)} players selected. "
+    f"{player_scope}: {represented_players} players represented. "
     "Only links where both the passer and receiver are in this group are shown. "
-    f"{scope_note}"
+    f"{scope_detail}"
 )
 label = f"{team_name} pass network — {player_scope}"
 

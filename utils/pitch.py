@@ -756,30 +756,74 @@ def _network_label_positions(nodes: pd.DataFrame) -> list[str]:
     return positions
 
 
+def _network_node_labels(passer: pd.DataFrame, receiver: pd.DataFrame) -> pd.Series:
+    """Pick one display name per player id from both endpoints of the links.
+
+    The most-used spelling wins; a tie goes to the passing side, which carries
+    the event's own actor rather than a name read back out of a pass detail.
+    """
+    sides = []
+    for priority, frame in enumerate([passer, receiver]):
+        side = frame[["NodeId", "Player"]].copy()
+        side["_Priority"] = priority
+        sides.append(side)
+    names = pd.concat(sides, ignore_index=True)
+    names["Player"] = names["Player"].astype("string").str.strip()
+    names = names[names["Player"].notna() & names["Player"].ne("")]
+    if names.empty:
+        return pd.Series(dtype="string")
+    return (
+        names.groupby(["NodeId", "Player"], as_index=False)
+        .agg(Uses=("Player", "size"), Priority=("_Priority", "min"))
+        .sort_values(
+            ["Uses", "Priority", "Player"],
+            ascending=[False, True, True],
+        )
+        .drop_duplicates("NodeId")
+        .set_index("NodeId")["Player"]
+    )
+
+
 def _network_nodes(edges: pd.DataFrame) -> pd.DataFrame:
+    """One node per player id, with their average position and pass volume.
+
+    Nodes are keyed on the provider player id alone. Grouping on the name too
+    drops any player the dimension could not name -- they vanish from the plot
+    rather than appearing unlabelled -- and splits one player into two dots
+    whenever the feed spells their name differently on the passing and the
+    receiving side, which halves the involvement behind each dot and leaves the
+    links attached to only one of them.
+    """
     passer = edges[["PlayerId", "Player", "Passer X", "Passer Y", "Pass Count"]].rename(
         columns={"PlayerId": "NodeId", "Passer X": "X", "Passer Y": "Y"}
-    )
-    passer = passer.groupby(["NodeId", "Player"], as_index=False).agg(
-        X=("X", "mean"),
-        Y=("Y", "mean"),
-        **{"Passes Out": ("Pass Count", "sum")},
     )
     receiver = edges[["ReceiverId", "Receiver", "Receiver X", "Receiver Y", "Pass Count"]].rename(
         columns={"ReceiverId": "NodeId", "Receiver": "Player", "Receiver X": "X", "Receiver Y": "Y"}
     )
-    receiver = receiver.groupby(["NodeId", "Player"], as_index=False).agg(
+    labels = _network_node_labels(passer, receiver)
+
+    passer_totals = passer.groupby("NodeId", as_index=False).agg(
+        X=("X", "mean"),
+        Y=("Y", "mean"),
+        **{"Passes Out": ("Pass Count", "sum")},
+    )
+    receiver_totals = receiver.groupby("NodeId", as_index=False).agg(
         X=("X", "mean"),
         Y=("Y", "mean"),
         **{"Passes In": ("Pass Count", "sum")},
     )
-    nodes = passer.merge(receiver, on=["NodeId", "Player"], how="outer", suffixes=("_out", "_in"))
+    nodes = passer_totals.merge(
+        receiver_totals, on="NodeId", how="outer", suffixes=("_out", "_in")
+    )
+    nodes["Player"] = nodes["NodeId"].map(labels).astype("string")
+    unnamed = nodes["Player"].isna() | nodes["Player"].eq("")
+    nodes.loc[unnamed, "Player"] = "Unknown #" + nodes.loc[unnamed, "NodeId"].astype(str)
     nodes["X"] = nodes[["X_out", "X_in"]].mean(axis=1)
     nodes["Y"] = nodes[["Y_out", "Y_in"]].mean(axis=1)
     nodes["Passes Out"] = nodes["Passes Out"].fillna(0)
     nodes["Passes In"] = nodes["Passes In"].fillna(0)
     nodes["Involvement"] = nodes["Passes Out"] + nodes["Passes In"]
-    return nodes.dropna(subset=["X", "Y"]).reset_index(drop=True)
+    return nodes.dropna(subset=["NodeId", "X", "Y"]).reset_index(drop=True)
 
 
 def formation_overlay_trace(
