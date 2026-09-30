@@ -1315,17 +1315,21 @@ opta_team_matches = _completed_fixture_rows(_opta_team_fixtures(opta_fixtures, t
 if opta_team_matches.empty:
     st.info("No completed Opta fixtures match this team and season, so fixture detail is unavailable.")
 else:
-    fixture_rows = opta_team_matches.set_index("FixtureId", drop=False)
-    fixture_options = fixture_rows.index.astype(str).tolist()
-    selected_fixture_id = st.selectbox(
+    # Fixture IDs are provider keys, not guaranteed-unique row identifiers: the
+    # immutable Opta feed can retain more than one ingested version of a fixture.
+    # Use the (unique) row index for the widget, then read the provider ID from
+    # the selected row for downstream detail queries.
+    fixture_rows = opta_team_matches.reset_index(drop=True)
+    fixture_options = fixture_rows.index.tolist()
+    selected_fixture_index = st.selectbox(
         "Fixture",
         fixture_options,
         index=len(fixture_options) - 1,
-        format_func=lambda fixture_id: _opta_fixture_label(fixture_rows.loc[fixture_id]),
+        format_func=lambda fixture_index: _opta_fixture_label(fixture_rows.loc[fixture_index]),
         key="team_overview_opta_fixture",
     )
-    selected_opta_fixture = fixture_rows.loc[selected_fixture_id]
-    fixture_id = selected_fixture_id
+    selected_opta_fixture = fixture_rows.loc[selected_fixture_index]
+    fixture_id = selected_opta_fixture["FixtureId"]
     _render_fixture_header(selected_opta_fixture)
 
     try:

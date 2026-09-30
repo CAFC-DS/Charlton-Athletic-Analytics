@@ -4838,8 +4838,32 @@ def load_opta_event_qualifiers(
     return pd.DataFrame.from_records(records, columns=OPTA_QUALIFIER_COLUMNS)
 
 
+def _latest_opta_fixture_versions(fixtures: pd.DataFrame) -> pd.DataFrame:
+    """Collapse append-only Opta fixture snapshots to one current row per ID."""
+    if fixtures.empty or "FixtureId" not in fixtures:
+        return fixtures
+
+    rows = fixtures.copy()
+    known_fixture_id = rows["FixtureId"].notna()
+    if not known_fixture_id.any():
+        return rows
+
+    if "Loaded At" in rows:
+        rows["_Loaded At Sort"] = pd.to_datetime(rows["Loaded At"], errors="coerce", utc=True)
+    else:
+        rows["_Loaded At Sort"] = pd.NaT
+
+    latest = (
+        rows.loc[known_fixture_id]
+        .sort_values("_Loaded At Sort", ascending=False, na_position="last", kind="stable")
+        .drop_duplicates("FixtureId", keep="first")
+    )
+    missing_id = rows.loc[~known_fixture_id]
+    return pd.concat([latest, missing_id], ignore_index=True).drop(columns="_Loaded At Sort")
+
+
 def load_opta_fixtures(season: str | None = None, team: str | None = None) -> pd.DataFrame:
-    """Real Opta/DVMS fixtures from CAFC_DB's immutable ingestion layer."""
+    """Current Opta fixtures, keeping the latest snapshot for each provider fixture ID."""
     columns = [
         "FixtureId",
         "Opta Match Id",
@@ -4901,7 +4925,8 @@ def load_opta_fixtures(season: str | None = None, team: str | None = None) -> pd
     fixtures["Date"] = pd.to_datetime(fixtures["Date"], errors="coerce")
     for column in ["Home Goals", "Away Goals"]:
         fixtures[column] = pd.to_numeric(fixtures[column], errors="coerce")
-    return fixtures[columns]
+    fixtures = _latest_opta_fixture_versions(fixtures)
+    return fixtures.sort_values(["Date", "FixtureId"], na_position="last", kind="stable").reset_index(drop=True)[columns]
 
 
 def _opta_team_key(value: object) -> str:
