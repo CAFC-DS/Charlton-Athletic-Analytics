@@ -20,16 +20,11 @@ XT_BASIS = (
 )
 
 
-def _team_xt_by_match(season: str, team_name: str, match_ids: list[object]) -> pd.DataFrame:
+def _team_xt_by_match(events: pd.DataFrame) -> pd.DataFrame:
     columns = ["MatchId", "xT"]
-    if not match_ids:
-        return pd.DataFrame(columns=columns)
-    events = data.load_match_events(
-        season=season, team=team_name, match_ids=match_ids, action_types=data.XT_ACTION_TYPES, limit=120000,
-    )
     if events.empty:
         return pd.DataFrame(columns=columns)
-    events["xT Value"] = data.event_xt_value(events)
+    events = events.assign(**{"xT Value": data.event_xt_value(events)})
     grouped = events.groupby("MatchId", as_index=False)["xT Value"].sum().rename(columns={"xT Value": "xT"})
     return grouped[columns]
 
@@ -140,7 +135,7 @@ with st.spinner(f"Building {team_name}'s {season} expected-threat picture..."):
     season_events = data.load_match_events(
         season=season, team=team_name, match_ids=match_ids, action_types=data.XT_ACTION_TYPES, limit=120000,
     )
-    match_xt = _team_xt_by_match(season, team_name, match_ids)
+    match_xt = _team_xt_by_match(season_events)
 
 team_matches_with_xt = team_matches.merge(match_xt, on="MatchId", how="left")
 team_matches_with_xt["xT"] = pd.to_numeric(team_matches_with_xt["xT"], errors="coerce").fillna(0.0)

@@ -153,15 +153,12 @@ def _team_fixture_rows(matches: pd.DataFrame, team_name: str) -> pd.DataFrame:
     return rows.sort_values(["Date", "MatchId"]).reset_index(drop=True)
 
 
-def _zone_label(start_x: object) -> str:
-    value = pd.to_numeric(pd.Series([start_x]), errors="coerce").iloc[0]
-    if pd.isna(value):
-        return "Unknown"
-    if value < -pitch.FINAL_THIRD_X:
-        return "Defensive Third"
-    if value < pitch.FINAL_THIRD_X:
-        return "Middle Third"
-    return "Final Third"
+def _zone_labels(start_x: pd.Series) -> np.ndarray:
+    return np.select(
+        [start_x.isna(), start_x < -pitch.FINAL_THIRD_X, start_x < pitch.FINAL_THIRD_X],
+        ["Unknown", "Defensive Third", "Middle Third"],
+        default="Final Third",
+    )
 
 
 def _transition_events(events: pd.DataFrame) -> pd.DataFrame:
@@ -172,7 +169,7 @@ def _transition_events(events: pd.DataFrame) -> pd.DataFrame:
         out[col] = _numeric(out, col)
     out["_Threat"] = out[["PXT Pass", "PXT Shot"]].clip(lower=0).sum(axis=1)
     start_x = _numeric(out, "Start X", np.nan)
-    out["Zone"] = [_zone_label(value) for value in start_x]
+    out["Zone"] = _zone_labels(start_x)
     return out
 
 

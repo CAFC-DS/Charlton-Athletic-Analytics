@@ -271,11 +271,17 @@ def aggregate_team_profiles(
     if matches.empty:
         return pd.DataFrame()
     team_names = teams or _fixture_team_names(matches)
+    # _profile_row only uses analysed restarts the team took or faced, so hand
+    # it that slice instead of re-filtering the whole season once per team.
+    analysed = sequences["Set Piece Type"].astype(str).isin(ANALYSED_TYPES)
+    taking_team = sequences["Team"].astype(str)
+    facing_team = sequences["Opponent"].astype(str)
     rows = []
     for team_name in team_names:
         fixtures = team_fixture_rows(matches, team_name)
         if not fixtures.empty:
-            rows.append(_profile_row(sequences, fixtures, team_name))
+            involved = sequences[analysed & (taking_team.eq(str(team_name)) | facing_team.eq(str(team_name)))]
+            rows.append(_profile_row(involved, fixtures, team_name))
     return pd.DataFrame(rows).replace([np.inf, -np.inf], np.nan)
 
 
@@ -655,6 +661,21 @@ DELIVERY_COLOURS = {
 }
 
 
+def _segment_values(start: object, end: object, gap: object = None) -> np.ndarray:
+    """Interleave per-row start/end values as start, end, gap for one multi-segment trace.
+
+    Drawing every restart as its own trace made season maps quadratic to
+    build (Plotly re-validates the whole figure on each add_trace); a single
+    trace whose segments are separated by None gaps renders identically.
+    Per-point style arrays can't hold None, so they pass a neutral ``gap``.
+    """
+    start_values = np.asarray(start, dtype=object)
+    values = np.full(len(start_values) * 3, gap, dtype=object)
+    values[0::3] = start_values
+    values[1::3] = np.asarray(end, dtype=object)
+    return values
+
+
 def delivery_map(
     sequences: pd.DataFrame,
     title: str,
@@ -705,27 +726,35 @@ def delivery_map(
         "Defensive First Contact": RED,
         "Uncontested / Unknown": GREY,
     }
-    for _, row in rows.iterrows():
-        colour = DELIVERY_COLOURS.get(str(row["Delivery"]), GREY)
-        hover = (
-            f"<b>{row.get('Taker') if pd.notna(row.get('Taker')) else 'Unknown taker'}</b><br>"
-            f"{row.get('Set Piece Type')} · {row.get('Delivery')}<br>"
-            f"First contact: {row.get('Contact Outcome')}<br>"
-            f"Shots: {int(row.get('Shots', 0))} · xG: {float(row.get('xG', 0)):.3f}"
-        )
+    takers = rows["Taker"].where(rows["Taker"].notna(), "Unknown taker").astype(str)
+    hover = (
+        "<b>" + takers + "</b><br>"
+        + rows["Set Piece Type"].astype(str) + " · " + rows["Delivery"].astype(str) + "<br>"
+        + "First contact: " + rows["Contact Outcome"].astype(str) + "<br>"
+        + "Shots: " + _number(rows["Shots"]).fillna(0).astype(int).astype(str)
+        + " · xG: " + _number(rows["xG"]).fillna(0).map("{:.3f}".format)
+    )
+    for delivery, group in rows.groupby("Delivery", sort=False):
+        colour = DELIVERY_COLOURS.get(str(delivery), GREY)
+        group_hover = hover.loc[group.index]
         fig.add_trace(
             go.Scatter(
-                x=[row["Start X"], row["End X"]],
-                y=[row["Start Y"], row["End Y"]],
+                x=_segment_values(group["Start X"], group["End X"]),
+                y=_segment_values(group["Start Y"], group["End Y"]),
                 mode="lines+markers",
                 line=dict(color=colour, width=2.1),
                 marker=dict(
-                    size=[5, 8],
-                    color=[colour, outcome_colours.get(str(row["Contact Outcome"]), GREY)],
+                    size=_segment_values(np.full(len(group), 5), np.full(len(group), 8), gap=0).astype(float),
+                    color=_segment_values(
+                        np.full(len(group), colour),
+                        group["Contact Outcome"].map(outcome_colours).fillna(GREY),
+                        gap="rgba(0,0,0,0)",
+                    ),
                     line=dict(color="#ffffff", width=1.1),
                 ),
                 opacity=0.72,
-                hovertemplate=hover + "<extra></extra>",
+                text=_segment_values(group_hover, group_hover, gap=""),
+                hovertemplate="%{text}<extra></extra>",
                 showlegend=False,
             )
         )
@@ -919,42 +948,35 @@ def throw_in_map(
         )
         return fig
     rows["Outcome"] = np.where(rows["Retained"].fillna(False), "Retained", "Lost")
-    for _, row in rows.iterrows():
-        colour = GREEN if row["Outcome"] == "Retained" else RED
-        width = 3.3 if bool(row["Long Throw"]) else 1.7
-        dash = "solid" if bool(row["Long Throw"]) else "dot"
-        hover = (
-            f"<b>{row.get('Taker') if pd.notna(row.get('Taker')) else 'Unknown thrower'}</b><br>"
-            f"{row.get('Outcome')} · {'Long' if bool(row.get('Long Throw')) else 'Standard'} throw<br>"
-            f"Shots: {int(row.get('Shots', 0))} · xG: {float(row.get('xG', 0)):.3f}"
-        )
+    rows["_Long"] = rows["Long Throw"].fillna(False).astype(bool)
+    takers = rows["Taker"].where(rows["Taker"].notna(), "Unknown thrower").astype(str)
+    hover = (
+        "<b>" + takers + "</b><br>"
+        + rows["Outcome"] + " · " + np.where(rows["_Long"], "Long", "Standard") + " throw<br>"
+        + "Shots: " + _number(rows["Shots"]).fillna(0).astype(int).astype(str)
+        + " · xG: " + _number(rows["xG"]).fillna(0).map("{:.3f}".format)
+    )
+    for (outcome, long_throw), group in rows.groupby(["Outcome", "_Long"], sort=False):
+        colour = GREEN if outcome == "Retained" else RED
+        group_hover = hover.loc[group.index]
         fig.add_trace(
             go.Scatter(
-                x=[row["Start X"], row["End X"]],
-                y=[row["Start Y"], row["End Y"]],
-                mode="lines",
-                line=dict(color=colour, width=width, dash=dash),
+                x=_segment_values(group["Start X"], group["End X"]),
+                y=_segment_values(group["Start Y"], group["End Y"]),
+                mode="lines+markers",
+                line=dict(color=colour, width=3.3 if long_throw else 1.7, dash="solid" if long_throw else "dot"),
+                # An arrow marker on each end point, angled along its segment.
+                marker=dict(
+                    symbol="arrow",
+                    angleref="previous",
+                    size=_segment_values(np.zeros(len(group)), np.full(len(group), 9), gap=0).astype(float),
+                    color=colour,
+                ),
                 opacity=0.72,
                 showlegend=False,
-                hovertemplate=hover + "<extra></extra>",
+                text=_segment_values(group_hover, group_hover, gap=""),
+                hovertemplate="%{text}<extra></extra>",
             )
-        )
-        fig.add_annotation(
-            x=float(row["End X"]),
-            y=float(row["End Y"]),
-            ax=float(row["Start X"]),
-            ay=float(row["Start Y"]),
-            xref="x",
-            yref="y",
-            axref="x",
-            ayref="y",
-            text="",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=0.65,
-            arrowwidth=1.2,
-            arrowcolor=colour,
-            opacity=0.72,
         )
     legend_items = [
         ("Retained", GREEN, "solid", 3),

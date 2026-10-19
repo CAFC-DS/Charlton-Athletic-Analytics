@@ -568,24 +568,29 @@ def _passing_matrix_heatmap(passes: pd.DataFrame, selected_player: str, title: s
             hovertemplate="Passer: %{y}<br>Receiver: %{x}<br>Completed passes: %{z:.0f}<extra></extra>",
         )
     )
-    for passer in matrix.index.tolist():
-        for receiver in matrix.columns.tolist():
-            value = float(matrix.loc[passer, receiver])
-            if value <= 0:
-                continue
-            fig.add_annotation(
-                x=receiver,
-                y=passer,
-                xref="x",
-                yref="y",
-                text=f"<b>{value:.0f}</b>",
-                showarrow=False,
-                font=dict(
+    # Cell labels as one text trace rather than an annotation per cell, which
+    # made large matrices slow to build.
+    cells = matrix.stack()
+    cells = cells[cells > 0]
+    if not cells.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=cells.index.get_level_values(1),
+                y=cells.index.get_level_values(0),
+                mode="text",
+                text=[f"<b>{value:.0f}</b>" for value in cells],
+                textfont=dict(
                     size=11,
-                    color="#ffffff" if max_passes and value >= max_passes * 0.55 else ui.CHARLTON_BLACK,
+                    color=np.where(cells >= max_passes * 0.55, "#ffffff", ui.CHARLTON_BLACK),
                     family="Inter, Arial, sans-serif",
                 ),
+                hoverinfo="skip",
+                showlegend=False,
             )
+        )
+        # Keep the axes fitted to the heatmap cells rather than the text points.
+        fig.update_xaxes(range=[-0.5, len(matrix.columns) - 0.5])
+        fig.update_yaxes(range=[-0.5, len(matrix.index) - 0.5])
     return _style_matrix_axes(
         fig,
         title=title,
