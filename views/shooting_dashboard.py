@@ -26,8 +26,8 @@ OUTCOME_COLORS = {
     "On Target / Saved": "#15803d",
     "Blocked": "#f59e0b",
     "Woodwork": "#9333ea",
-    "Off Target": "#667085",
-    "Other Shot": "#344054",
+    "Off Target": "#747A85",
+    "Other Shot": "#4A4F59",
 }
 OUTCOME_SYMBOLS = {
     "Goal": "star",
@@ -292,7 +292,7 @@ def _shot_map(
                 textfont=dict(size=10, color=ui.CHARLTON_BLACK),
                 marker=dict(
                     size=10 + (group["Shot xG"] / max_xg) * 26,
-                    color=OUTCOME_COLORS.get(outcome, "#344054"),
+                    color=OUTCOME_COLORS.get(outcome, "#4A4F59"),
                     symbol=group["_Shot Type Key"].apply(_shot_type_symbol),
                     opacity=0.9,
                     line=dict(color="#ffffff", width=1.2),
@@ -322,7 +322,7 @@ def _shot_map(
                 legendgroup="outcome-key",
                 marker=dict(
                     size=11,
-                    color=OUTCOME_COLORS.get(outcome, "#344054"),
+                    color=OUTCOME_COLORS.get(outcome, "#4A4F59"),
                     symbol="circle",
                     line=dict(color="#ffffff", width=1.2),
                 ),
@@ -343,7 +343,7 @@ def _shot_map(
                 legendgroup="shot-type-key",
                 marker=dict(
                     size=11,
-                    color="#667085",
+                    color="#747A85",
                     symbol=_shot_type_symbol(shot_type),
                     line=dict(color="#ffffff", width=1.2),
                 ),
@@ -459,7 +459,7 @@ def _outcome_chart(shots: pd.DataFrame, title: str) -> go.Figure:
             hole=0.58,
             sort=False,
             direction="clockwise",
-            marker=dict(colors=[OUTCOME_COLORS.get(str(outcome), "#344054") for outcome in plot_df["Outcome"].astype(str)], line=dict(color="#ffffff", width=2)),
+            marker=dict(colors=[OUTCOME_COLORS.get(str(outcome), "#4A4F59") for outcome in plot_df["Outcome"].astype(str)], line=dict(color="#ffffff", width=2)),
             textinfo="label+percent",
             textposition="inside",
             insidetextorientation="radial",
@@ -766,7 +766,7 @@ def _xg_timeline(shots: pd.DataFrame, title: str, timing_events: pd.DataFrame | 
             x1=ADDED_TIME_START_MINUTE,
             y0=0,
             y1=y_max,
-            line=dict(color="#667085", width=1.3, dash="dot"),
+            line=dict(color="#747A85", width=1.3, dash="dot"),
             layer="below",
         )
         fig.add_annotation(
@@ -774,7 +774,7 @@ def _xg_timeline(shots: pd.DataFrame, title: str, timing_events: pd.DataFrame | 
             y=y_max * 0.96,
             text="<b>Added Time</b>",
             showarrow=False,
-            font=dict(size=11, color="#475467"),
+            font=dict(size=11, color="#4A4F59"),
             bgcolor="rgba(255,255,255,0.76)",
             borderpad=2,
         )
@@ -838,7 +838,7 @@ def _xg_timeline_key(title: str = "Cumulative xG Timeline Key", height: int = 36
         x1=0.70,
         y0=0.22,
         y1=0.82,
-        line=dict(color="#667085", width=1.4, dash="dot"),
+        line=dict(color="#747A85", width=1.4, dash="dot"),
     )
     fig.add_annotation(
         x=0.06,
@@ -903,20 +903,20 @@ def _distance_quality_scatter(shots: pd.DataFrame, title: str) -> go.Figure:
             y=y_max * 0.97,
             text=f"<b>{zone['label']}</b>",
             showarrow=False,
-            font=dict(size=10, color="#667085"),
+            font=dict(size=10, color="#747A85"),
             bgcolor="rgba(255,255,255,0.55)",
             borderpad=1,
         )
 
-    fig.add_shape(type="line", x0=avg_distance, x1=avg_distance, y0=0, y1=y_max, line=dict(color="#667085", width=1.4, dash="dot"), layer="below")
-    fig.add_shape(type="line", x0=0, x1=x_max, y0=avg_xg, y1=avg_xg, line=dict(color="#667085", width=1.4, dash="dot"), layer="below")
+    fig.add_shape(type="line", x0=avg_distance, x1=avg_distance, y0=0, y1=y_max, line=dict(color="#747A85", width=1.4, dash="dot"), layer="below")
+    fig.add_shape(type="line", x0=0, x1=x_max, y0=avg_xg, y1=avg_xg, line=dict(color="#747A85", width=1.4, dash="dot"), layer="below")
     fig.add_annotation(
         x=avg_distance,
         y=y_max * 0.08,
         text=f"<b>Avg distance</b><br>{avg_distance:.1f}m",
         showarrow=False,
         xanchor="left",
-        font=dict(size=10, color="#475467"),
+        font=dict(size=10, color="#4A4F59"),
         bgcolor="rgba(255,255,255,0.72)",
         borderpad=2,
     )
@@ -928,7 +928,7 @@ def _distance_quality_scatter(shots: pd.DataFrame, title: str) -> go.Figure:
         xanchor="right",
         yanchor="bottom",
         yshift=6,
-        font=dict(size=10, color="#475467"),
+        font=dict(size=10, color="#4A4F59"),
         bgcolor="rgba(255,255,255,0.72)",
         borderpad=2,
     )
@@ -954,7 +954,7 @@ def _distance_quality_scatter(shots: pd.DataFrame, title: str) -> go.Figure:
                 cliponaxis=False,
                 marker=dict(
                     size=10 + (group["Post-Shot xG Display"] / max_psxg) * 24,
-                    color=OUTCOME_COLORS.get(outcome, "#344054"),
+                    color=OUTCOME_COLORS.get(outcome, "#4A4F59"),
                     symbol=OUTCOME_SYMBOLS.get(outcome, "circle"),
                     opacity=0.88,
                     line=dict(color="#ffffff", width=1),
@@ -1058,7 +1058,7 @@ def _shot_distance_zone_pitch_key(title: str = "Shot Distance Zone Key") -> go.F
         text="Colours match the distance bands used in the chart above.",
         showarrow=False,
         xanchor="left",
-        font=dict(size=11, color="#475467"),
+        font=dict(size=11, color="#4A4F59"),
         bgcolor="rgba(255,255,255,0.76)",
         borderpad=3,
     )
@@ -1120,14 +1120,19 @@ pa.page_header(
 )
 
 pa.section_heading("Season Shooting Profile")
-season = pa.select_season(key="shooting_dashboard_season")
-players = _shooting_profile_table(pa.load_player_data(season))
-selected_player: str | None = None
+with ui.controls_panel("season"):
+    season_col, player_col = st.columns([0.7, 3])
+    with season_col:
+        season = pa.select_season(key="shooting_dashboard_season")
+    players = _shooting_profile_table(pa.load_player_data(season))
+    selected_player: str | None = None
+    if not players.empty:
+        with player_col:
+            selected_player = pa.player_selector(players, key="shooting_dashboard_player", label="Season Player")
 
 if players.empty:
     st.warning("No players are available for the selected player season.")
 else:
-    selected_player = pa.player_selector(players, key="shooting_dashboard_player", label="Season Player")
     row = pa.player_row(players, selected_player)
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Goals /90", pa.metric_value(row.get("Goals /90"), "Goals /90"))
@@ -1170,14 +1175,7 @@ st.caption(
     "Use the fixture controls to inspect where shots came from, how good the chances were, and how outcomes differed by player, body part and shot type."
 )
 
-match_season = ma.select_match_season(key="shooting_dashboard_match_season")
-matches = ma.load_matches(match_season)
-if matches.empty:
-    st.warning("No match data is available for the selected match season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="shooting_dashboard_match")
-team_name = ma.team_selector_for_match(match_row, key="shooting_dashboard_team")
+match_season, matches, match_row, team_name = ma.fixture_bar("shooting_dashboard_match_season", "shooting_dashboard_match", "shooting_dashboard_team")
 
 raw_events = data.load_match_events(
     season=match_season,

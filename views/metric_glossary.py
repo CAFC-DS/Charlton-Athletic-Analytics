@@ -11,10 +11,13 @@
 # =============================================================================
 import pandas as pd
 import streamlit as st
-from utils import data
+from utils import data, ui
 
-st.title("📖 Metric Glossary")
-st.caption("Look up what a metric or football-analytics term means before reading too much into a number.")
+ui.page_header(
+    "Metric Glossary",
+    "Look up what a metric or football-analytics term means before reading too much into a number.",
+    eyebrow="Data hub",
+)
 
 DEFINITIONS = {
     "Goals /90": "Goals scored, normalised to a rate per 90 minutes played (a squad player with few minutes can show a fractional value like 0.57).",
@@ -38,7 +41,7 @@ sections = {
     "Match Analysis": data.MATCH_METRICS,
 }
 
-st.subheader("Used in this app")
+ui.section_heading("Used in this app")
 rows = []
 for section, metrics in sections.items():
     for metric in metrics:
@@ -54,10 +57,9 @@ undefined = app_glossary.loc[app_glossary["Definition"] == "No definition yet.",
 if len(undefined):
     st.warning(f"Missing definitions for: {', '.join(undefined)}", icon="⚠️")
 
-st.divider()
 
 # ---- Wider football-analytics glossary ---------------------------------------
-st.subheader("Football analytics glossary")
+ui.section_heading("Football analytics glossary")
 st.write("Broader terms analysts, coaches and other stakeholders commonly use — not all are computed in this app yet.")
 
 GLOSSARY = [

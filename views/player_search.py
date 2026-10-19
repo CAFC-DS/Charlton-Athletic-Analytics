@@ -21,21 +21,20 @@ pa.page_header(
     visualisation_note=False,
 )
 
-season = pa.select_season(key="player_search_season")
-players = pa.load_player_data(season)
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    f0, f1, f2, f3 = st.columns([0.7, 1.4, 1, 1])
+    with f0:
+        season = pa.select_season(key="player_search_season")
+    players = pa.load_player_data(season)
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
 
-team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
-position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
-
-pa.section_heading("Search filters")
-st.caption("Use these dropdowns to narrow the player list. The result table and quick-open cards update immediately.")
-f1, f2, f3 = st.columns([1.4, 1, 1])
-query = f1.text_input("Player name", placeholder="Search by name...")
-team = f2.selectbox("Team", ["All teams"] + team_options)
-position = f3.selectbox("Position", ["All positions"] + position_options)
+    team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
+    position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
+    query = f1.text_input("Player name", placeholder="Search by name...")
+    team = f2.selectbox("Team", ["All teams"] + team_options)
+    position = f3.selectbox("Position", ["All positions"] + position_options)
 
 mask = pd.Series(True, index=players.index)
 if query:

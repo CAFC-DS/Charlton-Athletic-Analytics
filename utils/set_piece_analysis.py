@@ -24,11 +24,11 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#7a7f87"
+GREY = "#747A85"
 BLUE = "#2563eb"
 PURPLE = "#7c3aed"
 TEAL = "#0f766e"
-LIGHT_GREY = "#e6edf5"
+LIGHT_GREY = "#E6E1DB"
 
 ANALYSED_TYPES = {"Corner", "Direct Free Kick", "Indirect Free Kick", "Throw-In"}
 CORNER_TYPES = {"Corner"}
@@ -399,7 +399,7 @@ def percentile_profile_chart(benchmarks: pd.DataFrame, title: str) -> go.Figure:
             x=[100] * len(rows),
             y=rows["Label"],
             orientation="h",
-            marker_color="#eef2f6",
+            marker_color="#ECE8E3",
             hoverinfo="skip",
             showlegend=False,
         )
@@ -477,7 +477,7 @@ def match_xg_trend(
             x=rows["Label"],
             y=-rows["Set-Play xG Against"],
             name="Set-Play xG Against",
-            marker_color="#344054",
+            marker_color="#4A4F59",
             customdata=np.stack([rows["Set-Play xG Against"], rows["Set-Play Goals Against"]], axis=-1),
             hovertemplate=(
                 "<b>%{x}</b><br>xG against: %{customdata[0]:.2f}<br>"
@@ -485,7 +485,7 @@ def match_xg_trend(
             ),
         )
     )
-    fig.add_hline(y=0, line=dict(color="#98a2b3", width=1))
+    fig.add_hline(y=0, line=dict(color="#9A9EA6", width=1))
     fig.update_layout(barmode="relative")
     fig.update_xaxes(title="Fixture")
     fig.update_yaxes(title="Set-Play xG (Against Below Zero)")
@@ -870,7 +870,7 @@ def delivery_mix_chart(sequences: pd.DataFrame) -> go.Figure:
 
     side_colours = {
         "Left": RED,
-        "Right": "#344054",
+        "Right": "#4A4F59",
         "Centre": BLUE,
         "Unknown": GREY,
     }
@@ -1092,7 +1092,7 @@ def outcome_funnel_chart(sequences: pd.DataFrame, title: str, set_piece_types: s
             x=values["Count"],
             text=[f"{count} · {share:.0f}%" for count, share in zip(values["Count"], values["Share"], strict=False)],
             textposition="inside",
-            marker=dict(color=["#344054", BLUE, AMBER, GREEN]),
+            marker=dict(color=["#4A4F59", BLUE, AMBER, GREEN]),
             customdata=np.stack([values["Share"]], axis=-1),
             hovertemplate="<b>%{y}</b><br>Count: %{x}<br>Share of restarts: %{customdata[0]:.1f}%<extra></extra>",
         )
@@ -1144,7 +1144,7 @@ def match_vs_season_chart(
     rows = pd.DataFrame(chart_rows)
     if rows.empty:
         return charting.polish_figure(go.Figure(), title, height=430)
-    colours = [RED, "#344054", BLUE, TEAL]
+    colours = [RED, "#4A4F59", BLUE, TEAL]
     fig = go.Figure()
     for team_name, colour in zip(teams, colours, strict=False):
         subset = rows[rows["Team"].astype(str).eq(str(team_name))]

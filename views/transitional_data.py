@@ -24,12 +24,12 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#7a7f87"
-LIGHT_GREY = "#d0d5dd"
-AGAINST_COLOUR = "#344054"
+GREY = "#747A85"
+LIGHT_GREY = "#D6D0C8"
+AGAINST_COLOUR = "#4A4F59"
 ZONE_ORDER = ["Defensive Third", "Middle Third", "Final Third"]
 ZONE_COLOURS: dict[str, str] = {
-    "Defensive Third": "#344054",
+    "Defensive Third": "#4A4F59",
     "Middle Third": "#c69214",
     "Final Third": ui.CHARLTON_RED,
 }
@@ -39,30 +39,6 @@ def _transitional_css() -> None:
     st.markdown(
         """
         <style>
-        .td-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-        .td-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 14px;
-        }
-        .td-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.35rem, 1.75vw, 1.75rem);
-            font-weight: 400;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-        }
         .td-balance-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -70,44 +46,44 @@ def _transitional_css() -> None:
             margin: 8px 0 18px;
         }
         .td-balance-card {
-            background: #ffffff;
-            border: 1px solid #e2e7ee;
-            border-top: 4px solid #98a2b3;
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-top: 4px solid #9A9EA6;
             border-radius: 9px;
             box-shadow: 0 5px 18px rgba(16, 24, 40, 0.055);
             padding: 15px 16px;
         }
         .td-balance-card.favour { border-top-color: #16803c; }
-        .td-balance-card.even { border-top-color: #98a2b3; }
-        .td-balance-card.risk { border-top-color: #c30017; }
+        .td-balance-card.even { border-top-color: #9A9EA6; }
+        .td-balance-card.risk { border-top-color: #D4021D; }
         .td-balance-label {
-            color: #667085;
+            color: #747A85;
             font-size: 0.72rem;
             font-weight: 850;
             letter-spacing: 0.06em;
             text-transform: uppercase;
         }
         .td-balance-value {
-            color: #101828;
+            color: #16181D;
             font-size: 1.5rem;
             font-weight: 850;
             letter-spacing: -0.03em;
             margin: 8px 0 6px;
         }
         .td-balance-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.79rem;
             line-height: 1.35;
         }
         .td-callout {
             padding: 14px 16px;
             margin: 4px 0 18px;
-            border: 1px solid #dfe5ec;
-            border-left: 4px solid #c30017;
+            border: 1px solid #E6E1DB;
+            border-left: 4px solid #D4021D;
             border-radius: 9px;
-            background: #f8fafc;
+            background: #F8F5F2;
             font-size: 0.92rem;
-            color: #253045;
+            color: #16181D;
         }
         </style>
         """,
@@ -116,15 +92,7 @@ def _transitional_css() -> None:
 
 
 def _summary_card(label: str, value: object) -> None:
-    st.markdown(
-        f"""
-        <div class="td-summary-card">
-            <div class="td-summary-label">{ui.esc(label)}</div>
-            <div class="td-summary-value">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value)
 
 
 def _numeric(frame: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
@@ -273,7 +241,7 @@ def _zone_breakdown_figure(sequences: pd.DataFrame, title: str) -> go.Figure:
     summary = summary.sort_values("_Order")
     total = max(float(summary["Sequences"].sum()), 1.0)
     summary["Share %"] = summary["Sequences"] / total * 100
-    colours = [ZONE_COLOURS.get(zone, "#98a2b3") for zone in summary["Zone"]]
+    colours = [ZONE_COLOURS.get(zone, "#9A9EA6") for zone in summary["Zone"]]
     customdata = np.stack([summary["Share %"], summary["Shot xG"]], axis=-1)
     fig.add_trace(
         go.Bar(
@@ -508,37 +476,38 @@ ma.page_header(
 )
 _transitional_css()
 
-control_cols = st.columns([1.0, 1.3, 0.9, 0.9])
-with control_cols[0]:
-    seasons = data.list_seasons().get("matches", [])
-    if not seasons:
-        st.warning("No match seasons are available.")
+with ui.filter_bar():
+    control_cols = st.columns([1.0, 1.3, 0.9, 0.9])
+    with control_cols[0]:
+        seasons = data.list_seasons().get("matches", [])
+        if not seasons:
+            st.warning("No match seasons are available.")
+            st.stop()
+        preferred_season = data.preferred_season(seasons)
+        season = st.selectbox("Season", seasons, index=seasons.index(preferred_season), key="transitions_season")
+
+    matches = ma.load_matches(season)
+    if matches.empty:
+        st.warning("No match data is available for this season.")
         st.stop()
-    preferred_season = data.preferred_season(seasons)
-    season = st.selectbox("Season", seasons, index=seasons.index(preferred_season), key="transitions_season")
 
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
+    teams = _team_options(matches)
+    if not teams:
+        st.warning("No teams are available from the selected match data.")
+        st.stop()
 
-teams = _team_options(matches)
-if not teams:
-    st.warning("No teams are available from the selected match data.")
-    st.stop()
+    with control_cols[1]:
+        team_name = st.selectbox("Team", teams, index=_default_team_index(teams), key="transitions_team")
 
-with control_cols[1]:
-    team_name = st.selectbox("Team", teams, index=_default_team_index(teams), key="transitions_team")
+    all_fixtures = _team_fixture_rows(matches, team_name)
+    if all_fixtures.empty:
+        st.warning("No fixtures are available for the selected team.")
+        st.stop()
 
-all_fixtures = _team_fixture_rows(matches, team_name)
-if all_fixtures.empty:
-    st.warning("No fixtures are available for the selected team.")
-    st.stop()
-
-with control_cols[2]:
-    venue = st.selectbox("Venue", ["All", "Home", "Away"], key="transitions_venue")
-with control_cols[3]:
-    window = st.selectbox("Match window", ["Full Season", "Last 5", "Last 10"], key="transitions_window")
+    with control_cols[2]:
+        venue = st.selectbox("Venue", ["All", "Home", "Away"], key="transitions_venue")
+    with control_cols[3]:
+        window = st.selectbox("Match window", ["Full Season", "Last 5", "Last 10"], key="transitions_window")
 
 venue_fixtures = all_fixtures if venue == "All" else all_fixtures[all_fixtures["Venue"].eq(venue)].copy()
 if venue_fixtures.empty:
@@ -722,7 +691,7 @@ with against_tab:
     detail_cols = st.columns(2)
     with detail_cols[0]:
         ma.section_heading("Progression Funnel (Against)")
-        st.plotly_chart(_funnel_chart(_funnel_data(sequences_against), "Opponent: Transition-to-Shot Conversion", [AGAINST_COLOUR, AMBER, "#c30017"]), width="stretch")
+        st.plotly_chart(_funnel_chart(_funnel_data(sequences_against), "Opponent: Transition-to-Shot Conversion", [AGAINST_COLOUR, AMBER, "#D4021D"]), width="stretch")
     with detail_cols[1]:
         ma.section_heading("Zone Conceded")
         st.plotly_chart(_zone_breakdown_figure(sequences_against, "Opponent Transitions by Starting Zone"), width="stretch")

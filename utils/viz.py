@@ -25,7 +25,7 @@ def scatter(df, x, y, label_col, highlight=None):
             text=plot_df["_text"],
             textposition="top center",
             marker=dict(
-                color=[ui.CHARLTON_RED if colour == "Highlight" else "#7a7f87" for colour in plot_df["_colour"]],
+                color=[ui.CHARLTON_RED if colour == "Highlight" else "#747A85" for colour in plot_df["_colour"]],
                 size=[16 if colour == "Highlight" else 11 for colour in plot_df["_colour"]],
                 line=dict(width=1.2, color="#ffffff"),
                 opacity=0.9,

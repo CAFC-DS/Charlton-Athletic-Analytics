@@ -94,25 +94,20 @@ def _inject_css() -> None:
         """
         <style>
         .to-note { color: var(--ss-muted); font-size: .86rem; margin: -2px 0 12px; }
+        /* Masthead treatment shared with ui.page_header. */
         .to-hero {
-            background:
-                radial-gradient(circle at 92% 16%, rgba(255,255,255,.16), transparent 20%),
-                linear-gradient(135deg, #111 0%, #271113 48%, #9c0214 135%);
-            border: 1px solid rgba(255,255,255,.12);
-            border-radius: 14px;
+            background: var(--red);
+            background-image:
+                repeating-linear-gradient(115deg, rgb(255 255 255 / 6%) 0 2px, transparent 2px 16px),
+                linear-gradient(115deg, transparent 64%, var(--red-deep) 64%);
+            border-bottom: 6px solid var(--black);
+            border-radius: 16px;
             box-shadow: var(--ss-shadow);
             color: #fff;
-            margin: 6px 0 16px;
+            margin: 0 0 18px;
             overflow: hidden;
-            padding: 26px 28px;
+            padding: 24px 28px;
             position: relative;
-        }
-        .to-hero:before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-top: 5px solid var(--ss-accent);
-            pointer-events: none;
         }
         .to-hero-main {
             align-items: center;
@@ -124,16 +119,19 @@ def _inject_css() -> None:
         }
         .to-team-block { align-items: center; display: flex; gap: 18px; min-width: 0; }
         .to-badge {
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgb(255 255 255 / 90%), 0 6px 18px rgb(0 0 0 / 35%);
             display: inline-grid;
-            filter: drop-shadow(0 10px 16px rgba(0,0,0,.32));
             flex: 0 0 auto;
-            height: 96px;
+            height: 88px;
             object-fit: contain;
+            padding: 8px;
             place-items: center;
-            width: 96px;
+            width: 88px;
         }
         .to-badge-fallback {
-            background: #fff;
+            background: var(--ss-panel);
             border: 1px solid rgba(255,255,255,.32);
             border-radius: 50%;
             box-shadow: 0 14px 22px rgba(0,0,0,.28);
@@ -143,33 +141,43 @@ def _inject_css() -> None:
             letter-spacing: -.03em;
         }
         .to-eyebrow {
-            color: rgba(255,255,255,.78);
-            font-size: .76rem;
-            font-weight: 850;
-            letter-spacing: .12em;
+            color: #fff;
+            font: 600 12px/1 var(--body);
+            letter-spacing: .14em;
             margin-bottom: 6px;
+            opacity: .85;
             text-transform: uppercase;
         }
-        .to-title {
+        .stApp .to-title {
             color: #fff;
-            font-size: clamp(2rem, 3.4vw, 3.05rem);
-            font-weight: 900;
-            line-height: 1.02;
+            font: 800 clamp(32px, 4.4vw, 54px)/0.92 var(--display);
+            font-stretch: 70%;
             margin: 0 0 12px;
+            padding: 0;
+            text-transform: uppercase;
         }
         .to-meta-row, .to-pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .to-meta-pill, .to-form-pill {
-            border: 1px solid rgba(255,255,255,.18);
-            border-radius: 999px;
-            color: rgba(255,255,255,.86);
+        .to-meta-pill {
+            background: rgb(0 0 0 / 18%);
+            border-radius: 10px;
+            color: #fff;
             font-size: .84rem;
-            font-weight: 700;
+            font-weight: 600;
             padding: 7px 11px;
         }
-        .to-form-pill { min-width: 34px; text-align: center; }
-        .to-win { background: rgba(18,183,106,.92); border-color: rgba(18,183,106,1); }
-        .to-draw { background: rgba(152,162,179,.84); border-color: rgba(152,162,179,1); }
-        .to-loss { background: rgba(195,0,23,.92); border-color: rgba(195,0,23,1); }
+        /* Form results as the dashboard's W/D/L squares. */
+        .to-form-pill {
+            border-radius: 6px;
+            color: #fff;
+            display: inline-grid;
+            font: 700 13px/1 var(--body);
+            height: 28px;
+            place-items: center;
+            width: 28px;
+        }
+        .to-win { background: #1a9a5a; }
+        .to-draw { background: #747A85; }
+        .to-loss { background: #111111; }
         .to-side { flex: 0 0 285px; }
         .to-side-label {
             color: rgba(255,255,255,.70);
@@ -181,11 +189,11 @@ def _inject_css() -> None:
         }
         .to-side-text { color: rgba(255,255,255,.78); font-size: .9rem; line-height: 1.45; margin-top: 9px; }
         .to-section {
-            color: var(--ss-muted);
-            font-size: .78rem;
-            font-weight: 850;
-            letter-spacing: .1em;
-            margin: 28px 0 10px;
+            color: var(--ink);
+            font: 700 21px/1.1 var(--display);
+            font-stretch: 82%;
+            letter-spacing: .02em;
+            margin: 26px 0 10px;
             text-transform: uppercase;
         }
         .to-card-grid, .to-player-grid {
@@ -203,12 +211,12 @@ def _inject_css() -> None:
         }
         .to-player-grid { grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); }
         .to-card, .to-fixture, .to-player-card, .to-about {
-            background: #fff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(16,24,40,.04);
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
         }
-        .to-card { border-top: 3px solid var(--ss-accent); padding: 15px 16px; }
+        .to-card { padding: 15px 16px; }
         .to-card-grid--snapshot .to-card {
             min-height: 150px;
             padding: 24px 22px;
@@ -239,7 +247,6 @@ def _inject_css() -> None:
             margin-top: 7px;
         }
         .to-fixture {
-            border-top: 3px solid var(--ss-accent);
             margin-bottom: 12px;
             min-height: 150px;
             padding: 17px 18px;
@@ -278,10 +285,10 @@ def _inject_css() -> None:
         }
         .to-about p { color: var(--ss-ink); line-height: 1.55; margin: 0 0 10px; }
         .to-fixture-detail {
-            background: #fff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(16,24,40,.04);
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             margin: 8px 0 14px;
             padding: 18px 20px;
         }
@@ -303,10 +310,10 @@ def _inject_css() -> None:
             padding: 8px 12px;
         }
         .to-possession-card {
-            background: #fff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(16,24,40,.04);
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             margin: 10px 0 16px;
             padding: 20px;
         }
@@ -341,10 +348,10 @@ def _inject_css() -> None:
         .to-lineup-heading { color: var(--ss-ink); font-size: 1.02rem; font-weight: 900; margin-top: 4px; }
         .to-lineup-shape { color: var(--ss-muted); font-size: .84rem; margin: 4px 0 10px; }
         .to-radar-key {
-            background: #ffffff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(16,24,40,.04);
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             margin: -18px 0 22px;
             padding: 16px 18px;
         }
@@ -1102,8 +1109,8 @@ def _render_effective_possession(possession: pd.DataFrame, team_name: str) -> No
     home_pct = min(max(home_pct, 0.0), 100.0)
     away_pct = min(max(away_pct, 0.0), 100.0)
     selected = _normalise_name(team_name)
-    home_colour = "#c30017" if _normalise_name(row.get("Home")) == selected else "#344054"
-    away_colour = "#c30017" if _normalise_name(row.get("Away")) == selected else "#344054"
+    home_colour = "#D4021D" if _normalise_name(row.get("Home")) == selected else "#4A4F59"
+    away_colour = "#D4021D" if _normalise_name(row.get("Away")) == selected else "#4A4F59"
     st.markdown(
         f"""
         <div class="to-possession-card">
@@ -1237,14 +1244,15 @@ def _render_hero(
     )
 
 
-ui.apply_statsearch_theme()
 _inject_css()
+# The hero depends on the selected team, so reserve its place above the controls.
+hero_slot = st.container()
 
 season_options = data.list_seasons()
 match_seasons = season_options.get("matches", [])
 player_seasons = season_options.get("players", [])
 
-with st.expander("Data controls", expanded=True):
+with ui.controls_panel():
     st.markdown(
         '<div class="to-note">Select the match season and team. Team overview metrics are derived from completed match rows, not aggregate-average team tables.</div>',
         unsafe_allow_html=True,
@@ -1298,7 +1306,8 @@ if opta_next_match is not None:
     next_match = opta_next_match
 strengths = _performance_strengths(performance, team_name)
 
-_render_hero(team_name, "match-derived", match_season, competition, league_position, record, strengths, team_matches)
+with hero_slot:
+    _render_hero(team_name, "match-derived", match_season, competition, league_position, record, strengths, team_matches)
 
 nav_cols = st.columns(6)
 with nav_cols[0]:
@@ -1329,14 +1338,19 @@ recent = _completed_team_matches(team_matches).tail(5) if not team_matches.empty
 if not recent.empty and "Date" in recent:
     recent = recent.sort_values("Date", ascending=False)
 
-with st.container(border=True):
+with ui.card("recent_matches"):
     st.subheader("Recent Matches")
     st.caption("Latest completed fixtures from the selected match dataset.")
     if recent.empty:
         st.info("No completed fixtures available for recent-match display.")
     else:
         cols = [col for col in ["Date", "Opponent", "Venue", "Goals For", "Goals Against", "Team Result", "Points"] if col in recent]
-        st.dataframe(recent[cols], width="stretch", hide_index=True)
+        st.dataframe(
+            recent[cols],
+            width="stretch",
+            hide_index=True,
+            column_config={"Date": st.column_config.DatetimeColumn("Date", format="ddd D MMM YYYY")},
+        )
 
 _section("Fixture detail")
 st.caption(

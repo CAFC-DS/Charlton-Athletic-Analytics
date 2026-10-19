@@ -29,13 +29,13 @@ TECHNIQUE_COLOURS: dict[str, str] = {
     "Short Aerial Pass": "#12b76a",
     "Cross (High)": "#2563eb",
     "Cross (Low)": "#7a4dc4",
-    "Header": "#7a7f87",
+    "Header": "#747A85",
     "Carry / Dribble": "#e04f9f",
-    "Other": "#98a2b3",
+    "Other": "#9A9EA6",
 }
 ZONE_ORDER = ["Defensive Third", "Middle Third", "Final Third"]
 ZONE_COLOURS: dict[str, str] = {
-    "Defensive Third": "#344054",
+    "Defensive Third": "#4A4F59",
     "Middle Third": "#c69214",
     "Final Third": ui.CHARLTON_RED,
 }
@@ -45,39 +45,6 @@ def _line_breaking_css() -> None:
     st.markdown(
         """
         <style>
-        .lb-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-
-        .lb-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 14px;
-        }
-
-        .lb-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.45rem, 1.85vw, 1.85rem);
-            font-weight: 400;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-        }
-
-        .lb-summary-value-text {
-            font-size: clamp(0.78rem, 0.92vw, 0.98rem);
-            letter-spacing: -0.01em;
-            line-height: 1.2;
-            overflow-wrap: anywhere;
-        }
 
         .lb-benchmark-row {
             display: grid;
@@ -87,9 +54,9 @@ def _line_breaking_css() -> None:
         }
 
         .lb-benchmark-card {
-            background: #ffffff;
-            border: 1px solid #e2e7ee;
-            border-top: 3px solid #98a2b3;
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-top: 3px solid #9A9EA6;
             border-radius: 9px;
             box-shadow: 0 3px 12px rgba(16, 24, 40, 0.05);
             padding: 13px 15px;
@@ -97,10 +64,10 @@ def _line_breaking_css() -> None:
 
         .lb-benchmark-card.strong { border-top-color: #16803c; }
         .lb-benchmark-card.mid { border-top-color: #d89216; }
-        .lb-benchmark-card.weak { border-top-color: #c30017; }
+        .lb-benchmark-card.weak { border-top-color: #D4021D; }
 
         .lb-benchmark-label {
-            color: #667085;
+            color: #747A85;
             font-size: 0.72rem;
             font-weight: 850;
             letter-spacing: 0.06em;
@@ -108,7 +75,7 @@ def _line_breaking_css() -> None:
         }
 
         .lb-benchmark-value {
-            color: #101828;
+            color: #16181D;
             font-size: 1.35rem;
             font-weight: 800;
             letter-spacing: -0.03em;
@@ -116,7 +83,7 @@ def _line_breaking_css() -> None:
         }
 
         .lb-benchmark-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.78rem;
             line-height: 1.35;
         }
@@ -127,16 +94,7 @@ def _line_breaking_css() -> None:
 
 
 def _summary_card(label: str, value: object, *, text_value: bool = False) -> None:
-    value_class = "lb-summary-value lb-summary-value-text" if text_value else "lb-summary-value"
-    st.markdown(
-        f"""
-        <div class="lb-summary-card">
-            <div class="lb-summary-label">{ui.esc(label)}</div>
-            <div class="{value_class}">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value, text_value=text_value)
 
 
 def _numeric(events: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
@@ -196,7 +154,7 @@ def _technique_breakdown_figure(events: pd.DataFrame, title: str) -> go.Figure:
     if summary.empty:
         return charting.polish_figure(fig, title, height=380)
 
-    colours = [TECHNIQUE_COLOURS.get(technique, "#98a2b3") for technique in summary["Technique"]]
+    colours = [TECHNIQUE_COLOURS.get(technique, "#9A9EA6") for technique in summary["Technique"]]
     customdata = np.stack([summary["Bypassed Opponents"], summary["Bypassed Defenders"]], axis=-1)
     fig.add_trace(
         go.Bar(
@@ -239,7 +197,7 @@ def _zone_breakdown_figure(events: pd.DataFrame, title: str) -> go.Figure:
     total_actions = max(float(summary["Actions"].sum()), 1.0)
     summary["Share %"] = summary["Actions"] / total_actions * 100
 
-    colours = [ZONE_COLOURS.get(zone, "#98a2b3") for zone in summary["Zone"]]
+    colours = [ZONE_COLOURS.get(zone, "#9A9EA6") for zone in summary["Zone"]]
     customdata = np.stack([summary["Bypassed Opponents"], summary["Share %"]], axis=-1)
     fig.add_trace(
         go.Bar(
@@ -454,14 +412,9 @@ _line_breaking_css()
 
 
 def _render_match_tab() -> None:
-    season = ma.select_match_season(key="line_breaking_actions_season")
-    matches = ma.load_matches(season)
-    if matches.empty:
-        st.warning("No match data is available for this season.")
-        return
-
-    match_row = ma.match_selector(matches, key="line_breaking_actions_match")
-    team_name = ma.team_selector_for_match(match_row, key="line_breaking_actions_team")
+    season, matches, match_row, team_name = ma.fixture_bar(
+        "line_breaking_actions_season", "line_breaking_actions_match", "line_breaking_actions_team"
+    )
     events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), team=team_name, limit=20000)
     if events.empty:
         st.info("No event-level rows are available for this selected match and team.")

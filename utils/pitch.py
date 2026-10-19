@@ -19,10 +19,10 @@ PENALTY_BOX_Y = 20.16
 RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 DEEP_RED = ui.CHARLTON_DEEP_RED
-GREY = "#7a7f87"
+GREY = "#747A85"
 LIGHT_GREY = ui.CHARLTON_BORDER
 GOLD = "#c69214"
-BLUE = "#344054"
+BLUE = "#4A4F59"
 GREEN = "#16803c"
 PITCH_GREEN = "#f7fbf8"
 LINE = "#b7c2d0"
@@ -1065,7 +1065,7 @@ def formation_map(
     dot_color = marker_color if marker_color else RED
     border_color = "#ffffff"
     # If the marker is white or very light, use a dark border for visibility
-    if str(dot_color).lower() in {"#ffffff", "white", "#fffffe", "#f4f5f7"}:
+    if str(dot_color).lower() in {"#ffffff", "white", "#fffffe", "#F5F3F0"}:
         border_color = DARK
 
     # Standard Opta F7 Formation Place to Coordinate mapping (Back-to-front, Right-to-left)

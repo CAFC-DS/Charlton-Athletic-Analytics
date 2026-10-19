@@ -8,11 +8,12 @@ import pandas as pd
 import streamlit as st
 from utils import data, ui
 
-st.title("⬇️ Export Data")
-st.caption("Pick a season and dataset, narrow it down to the columns and rows you need, then download a trimmed CSV.")
-
+ui.page_header(
+    "Export Data",
+    "Pick a season and dataset, narrow it to the columns and rows you need, then download a trimmed CSV.",
+    eyebrow="Data hub",
+)
 ui.data_refresh_control()
-st.divider()
 
 # Every dataset takes an optional season; without one each loader silently
 # resolves to whichever season sorts last (the newest, often still a
@@ -22,7 +23,7 @@ if not season_options:
     st.warning("No seasons are available to export.")
     st.stop()
 preferred_season = data.preferred_season(season_options)
-season = st.selectbox("Season", season_options, index=season_options.index(preferred_season))
+season = st.selectbox("Season", season_options, index=season_options.index(preferred_season), width=240)
 
 datasets = {
     "Players": data.load_players(season=season),

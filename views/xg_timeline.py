@@ -13,62 +13,6 @@ def _xg_timeline_css() -> None:
     st.markdown(
         """
         <style>
-        .xgt-fixture-metric {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-
-        .xgt-fixture-metric-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 18px;
-        }
-
-        .xgt-fixture-metric-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(0.68rem, 0.78vw, 0.84rem);
-            font-weight: 500;
-            letter-spacing: -0.01em;
-            line-height: 1.2;
-            overflow: hidden !important;
-            text-overflow: clip !important;
-            white-space: nowrap !important;
-        }
-
-        .xgt-standard-metric {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-
-        .xgt-standard-metric-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 14px;
-        }
-
-        .xgt-standard-metric-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.75rem, 2.2vw, 2.2rem);
-            font-weight: 400;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -76,15 +20,7 @@ def _xg_timeline_css() -> None:
 
 
 def _metric_card(label: str, value: object) -> None:
-    st.markdown(
-        f"""
-        <div class="xgt-standard-metric">
-            <div class="xgt-standard-metric-label">{ui.esc(label)}</div>
-            <div class="xgt-standard-metric-value">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value)
 
 
 ma.page_header(
@@ -94,13 +30,7 @@ ma.page_header(
 )
 _xg_timeline_css()
 
-season = ma.select_match_season(key="xg_timeline_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="xg_timeline_match")
+season, matches, match_row, _ = ma.fixture_bar("xg_timeline_season", "xg_timeline_match")
 events = data.load_match_events(
     season=season,
     match_id=match_row.get("MatchId"),
@@ -111,15 +41,7 @@ shots = events.dropna(subset=["Shot xG"]).copy()
 ma.section_heading("Selected fixture")
 metric_cols = st.columns(5)
 with metric_cols[0]:
-    st.markdown(
-        f"""
-        <div class="xgt-fixture-metric">
-            <div class="xgt-fixture-metric-label">Fixture</div>
-            <div class="xgt-fixture-metric-value">{ui.esc(match_row.get("Match", "Unknown"))}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile("Fixture", match_row.get("Match", "Unknown"), text_value=True)
 with metric_cols[1]:
     _metric_card("Score", f"{match_row['Home Goals']:.0f} - {match_row['Away Goals']:.0f}")
 with metric_cols[2]:

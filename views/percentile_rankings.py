@@ -32,7 +32,7 @@ def _profile_figure(profile: pd.DataFrame, player_name: str, basis_label: str) -
     rows["Colour"] = np.select(
         [rows["Percentile"].ge(67), rows["Percentile"].ge(33)],
         ["#16803c", "#d89216"],
-        default="#c30017",
+        default="#D4021D",
     )
     customdata = np.column_stack(
         [
@@ -45,7 +45,7 @@ def _profile_figure(profile: pd.DataFrame, player_name: str, basis_label: str) -
     )
     fig = go.Figure()
     fig.add_trace(
-        go.Bar(x=[100] * len(rows), y=rows["Label"], orientation="h", marker_color="#eef2f6", hoverinfo="skip", showlegend=False)
+        go.Bar(x=[100] * len(rows), y=rows["Label"], orientation="h", marker_color="#ECE8E3", hoverinfo="skip", showlegend=False)
     )
     fig.add_trace(
         go.Bar(
@@ -76,7 +76,7 @@ def _profile_figure(profile: pd.DataFrame, player_name: str, basis_label: str) -
             showlegend=False,
         )
     )
-    fig.add_vline(x=50, line=dict(color="#667085", width=1.3, dash="dash"))
+    fig.add_vline(x=50, line=dict(color="#747A85", width=1.3, dash="dash"))
     fig.update_layout(barmode="overlay", bargap=0.32)
     fig.update_xaxes(range=[0, 122], tickvals=[0, 25, 50, 75, 100], title=f"Percentile ({basis_label})")
     fig.update_yaxes(autorange="reversed", title="")
@@ -120,24 +120,25 @@ pa.page_header(
     "Rank every league player on any style metric, then read one player's full style profile against their peers.",
 )
 
-season = pa.select_season(key="percentile_rankings_season")
-all_players = pa.add_position_groups(pa.load_player_data(season))
-if all_players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    pool_cols = st.columns([0.7, 1.0, 1.1, 0.9])
+    with pool_cols[0]:
+        season = pa.select_season(key="percentile_rankings_season")
+    all_players = pa.add_position_groups(pa.load_player_data(season))
+    if all_players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
 
-pa.section_heading("Ranking pool")
-st.caption("Filters shape both the ranking chart below and the percentile basis for the style profile.")
-pool_cols = st.columns([1.0, 1.1, 0.9])
-position_options = ["All positions", *sorted(all_players["Role Group"].dropna().astype(str).unique().tolist())]
-with pool_cols[0]:
-    position_filter = st.selectbox("Position group", position_options, key="percentile_rankings_position")
-team_options = sorted(all_players["Team"].dropna().astype(str).unique().tolist()) if "Team" in all_players else []
-with pool_cols[1]:
-    team_filter = st.selectbox("Team", ["All teams", *team_options], key="percentile_rankings_team")
-with pool_cols[2]:
-    max_minutes = int(pd.to_numeric(all_players.get("Minutes", pd.Series([0])), errors="coerce").fillna(0).max())
-    minimum_minutes = st.slider("Minimum minutes", 0, max(max_minutes, 1), min(270, max_minutes), step=45, key="percentile_rankings_minutes")
+    position_options = ["All positions", *sorted(all_players["Role Group"].dropna().astype(str).unique().tolist())]
+    with pool_cols[1]:
+        position_filter = st.selectbox("Position group", position_options, key="percentile_rankings_position")
+    team_options = sorted(all_players["Team"].dropna().astype(str).unique().tolist()) if "Team" in all_players else []
+    with pool_cols[2]:
+        team_filter = st.selectbox("Team", ["All teams", *team_options], key="percentile_rankings_team")
+    with pool_cols[3]:
+        max_minutes = int(pd.to_numeric(all_players.get("Minutes", pd.Series([0])), errors="coerce").fillna(0).max())
+        minimum_minutes = st.slider("Minimum minutes", 0, max(max_minutes, 1), min(270, max_minutes), step=45, key="percentile_rankings_minutes")
+st.caption("These filters shape both the ranking chart and the percentile basis for the style profile.")
 
 pool = all_players.copy()
 if position_filter != "All positions":

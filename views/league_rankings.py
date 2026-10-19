@@ -54,8 +54,8 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#667085"
-LIGHT_GREY = "#d0d5dd"
+GREY = "#747A85"
+LIGHT_GREY = "#D6D0C8"
 LOW_STANDING = "#7b8794"
 STYLE_METRICS = {"Pass %", "Bypassed Opponents /90", "Passes to Final 3rd /90", "Dribble Progression /90"}
 
@@ -73,19 +73,19 @@ def _inject_rankings_css() -> None:
         .lr-overview-card {
             min-width: 0;
             padding: 16px 17px;
-            border: 1px solid #e2e7ee;
-            border-top: 4px solid #98a2b3;
+            border: 1px solid #E6E1DB;
+            border-top: 4px solid #9A9EA6;
             border-radius: 9px;
-            background: #ffffff;
+            background: var(--ss-panel);
             box-shadow: 0 5px 18px rgba(16, 24, 40, 0.055);
         }
         .lr-overview-card.strong { border-top-color: #16803c; }
-        .lr-overview-card.focus { border-top-color: #c30017; }
+        .lr-overview-card.focus { border-top-color: #D4021D; }
         .lr-overview-card.watch { border-top-color: #7b8794; }
-        .lr-overview-card.neutral { border-top-color: #344054; }
+        .lr-overview-card.neutral { border-top-color: #4A4F59; }
         .lr-card-label {
             min-height: 2.4em;
-            color: #667085;
+            color: #747A85;
             font-size: 0.74rem;
             font-weight: 850;
             letter-spacing: 0.065em;
@@ -93,7 +93,7 @@ def _inject_rankings_css() -> None:
             text-transform: uppercase;
         }
         .lr-card-value {
-            color: #101828;
+            color: #16181D;
             font-size: 1.58rem;
             font-weight: 850;
             letter-spacing: -0.035em;
@@ -101,7 +101,7 @@ def _inject_rankings_css() -> None:
             margin: 9px 0 7px;
         }
         .lr-card-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.78rem;
             line-height: 1.4;
         }
@@ -111,36 +111,36 @@ def _inject_rankings_css() -> None:
             gap: 0;
             margin: 8px 0 20px;
             overflow: hidden;
-            border: 1px solid #dfe5ec;
-            border-radius: 10px;
-            background: #ffffff;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            background: var(--ss-panel);
             box-shadow: 0 6px 22px rgba(16, 24, 40, 0.06);
         }
         .lr-insight-cell {
             min-width: 0;
             padding: 15px 16px;
-            border-left: 1px solid #eaecf0;
+            border-left: 1px solid #E6E1DB;
         }
         .lr-insight-cell:first-child {
             border-left: 0;
             background: linear-gradient(135deg, #fff1f3 0%, #ffffff 100%);
         }
         .lr-insight-label {
-            color: #667085;
+            color: #747A85;
             font-size: 0.7rem;
             font-weight: 850;
             letter-spacing: 0.055em;
             text-transform: uppercase;
         }
         .lr-insight-value {
-            color: #172033;
+            color: #16181D;
             font-size: 1.12rem;
             font-weight: 850;
             line-height: 1.2;
             margin-top: 5px;
         }
         .lr-insight-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.74rem;
             line-height: 1.35;
             margin-top: 4px;
@@ -148,13 +148,13 @@ def _inject_rankings_css() -> None:
         .lr-callout {
             padding: 15px 17px;
             margin: 8px 0 18px;
-            border: 1px solid #dfe5ec;
-            border-left: 4px solid #c30017;
+            border: 1px solid #E6E1DB;
+            border-left: 4px solid #D4021D;
             border-radius: 9px;
-            background: #f8fafc;
+            background: #F8F5F2;
         }
         .lr-callout-label {
-            color: #c30017;
+            color: #D4021D;
             font-size: 0.72rem;
             font-weight: 850;
             letter-spacing: 0.08em;
@@ -162,31 +162,21 @@ def _inject_rankings_css() -> None:
             text-transform: uppercase;
         }
         .lr-callout-copy {
-            color: #253045;
+            color: #16181D;
             font-size: 0.92rem;
             line-height: 1.5;
-        }
-        .lr-direction {
-            display: inline-block;
-            padding: 4px 8px;
-            margin-left: 5px;
-            border-radius: 999px;
-            background: #f2f4f7;
-            color: #344054;
-            font-size: 0.72rem;
-            font-weight: 800;
         }
         @media (max-width: 980px) {
             .lr-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .lr-insight { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .lr-insight-cell { border-left: 0; }
-            .lr-insight-cell:nth-child(even) { border-left: 1px solid #eaecf0; }
-            .lr-insight-cell:nth-child(n+3) { border-top: 1px solid #eaecf0; }
+            .lr-insight-cell:nth-child(even) { border-left: 1px solid #E6E1DB; }
+            .lr-insight-cell:nth-child(n+3) { border-top: 1px solid #E6E1DB; }
             .lr-insight-cell:last-child { grid-column: 1 / -1; border-left: 0; }
         }
         @media (max-width: 600px) {
             .lr-overview-grid, .lr-insight { grid-template-columns: minmax(0, 1fr); }
-            .lr-insight-cell { border-left: 0; border-top: 1px solid #eaecf0; }
+            .lr-insight-cell { border-left: 0; border-top: 1px solid #E6E1DB; }
             .lr-insight-cell:first-child { border-top: 0; }
         }
         </style>
@@ -599,7 +589,7 @@ def _ranking_figure(
     ]
     selected_mask = rows["Team"].astype(str).eq(str(selected_team))
     leader_mask = rows["Rank"].eq(1) & ~selected_mask
-    colours = np.select([selected_mask, leader_mask], [RED, "#344054"], default="#d0d5dd")
+    colours = np.select([selected_mask, leader_mask], [RED, "#4A4F59"], default="#D6D0C8")
     customdata = np.stack([rows["Team"], rows["Raw Label"], rows["Rank"]], axis=-1)
 
     fig = go.Figure()
@@ -621,7 +611,7 @@ def _ranking_figure(
             ),
         )
     )
-    fig.add_vline(x=50, line=dict(color="#667085", width=1.4, dash="dash"))
+    fig.add_vline(x=50, line=dict(color="#747A85", width=1.4, dash="dash"))
     fig.add_annotation(
         x=50,
         y=1.025,
@@ -696,7 +686,7 @@ def _profile_figure(profile: pd.DataFrame, team_name: str) -> go.Figure:
             x=[100] * len(rows),
             y=rows["Label"],
             orientation="h",
-            marker_color="#eef2f6",
+            marker_color="#ECE8E3",
             hoverinfo="skip",
             showlegend=False,
         )
@@ -731,7 +721,7 @@ def _profile_figure(profile: pd.DataFrame, team_name: str) -> go.Figure:
             showlegend=False,
         )
     )
-    fig.add_vline(x=50, line=dict(color="#667085", width=1.3, dash="dash"))
+    fig.add_vline(x=50, line=dict(color="#747A85", width=1.3, dash="dash"))
     fig.update_layout(barmode="overlay", bargap=0.32)
     fig.update_xaxes(
         range=[0, 122],
@@ -843,10 +833,10 @@ def _head_to_head_figure(rows: pd.DataFrame, first_team: str, second_team: str, 
             y=labels,
             mode="markers+text",
             name=second_team,
-            marker=dict(size=15, color="#344054", line=dict(color="#ffffff", width=2)),
+            marker=dict(size=15, color="#4A4F59", line=dict(color="#ffffff", width=2)),
             text=[f"{value:.0f}" for value in rows["Second Percentile"]],
             textposition="bottom center",
-            textfont=dict(size=10, color="#344054"),
+            textfont=dict(size=10, color="#4A4F59"),
             customdata=second_custom,
             cliponaxis=False,
             hovertemplate=(
@@ -855,7 +845,7 @@ def _head_to_head_figure(rows: pd.DataFrame, first_team: str, second_team: str, 
             ),
         )
     )
-    fig.add_vline(x=50, line=dict(color="#98a2b3", width=1.2, dash="dash"))
+    fig.add_vline(x=50, line=dict(color="#9A9EA6", width=1.2, dash="dash"))
     fig.update_xaxes(range=[-3, 107], dtick=25, title="Direction-adjusted league percentile")
     fig.update_yaxes(title="", autorange="reversed")
     fig = charting.polish_figure(fig, title, height=max(430, len(rows) * 82 + 170))
@@ -987,9 +977,7 @@ if not season_options:
     st.warning("No team or match seasons are available for league rankings.")
     st.stop()
 
-ta.section_heading("Comparison Setup")
-with st.container(border=True):
-    st.caption("Choose the season and focus team once. Metric-specific controls sit inside the relevant comparison view.")
+with ui.filter_bar():
     setup_columns = st.columns([0.8, 1.35])
     with setup_columns[0]:
         preferred_season = data.preferred_season(season_options)

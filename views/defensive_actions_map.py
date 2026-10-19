@@ -54,14 +54,7 @@ ma.page_header(
     "CAFC_DB Impect provider events supply adjusted coordinates, action labels, phase labels and result values through the app's event adapter.",
 )
 
-season = ma.select_match_season(key="def_map_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="def_map_match")
-team_name = ma.team_selector_for_match(match_row, key="def_map_team")
+season, matches, match_row, team_name = ma.fixture_bar("def_map_season", "def_map_match", "def_map_team")
 events = data.load_match_events(
     season=season,
     match_id=match_row.get("MatchId"),

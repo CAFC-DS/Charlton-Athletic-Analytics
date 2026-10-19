@@ -35,9 +35,9 @@ def _overview_css() -> None:
         """
         <style>
         .mo-scorecard {
-            background: #ffffff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 12px;
+            border-radius: 14px;
             box-shadow: 0 10px 26px rgba(16, 24, 40, 0.08);
             margin: 10px 0 22px;
             overflow: hidden;
@@ -45,7 +45,8 @@ def _overview_css() -> None:
 
         .mo-scorecard-top {
             align-items: center;
-            background: linear-gradient(135deg, #111111 0%, #2a1115 58%, #9c0214 145%);
+            background: var(--black);
+            border-bottom: 4px solid var(--red);
             color: #ffffff;
             display: flex;
             gap: 14px;
@@ -106,9 +107,9 @@ def _overview_css() -> None:
 
         .mo-score-centre {
             align-items: center;
-            background: #f8fafc;
-            border: 1px solid #e6edf5;
-            border-radius: 12px;
+            background: #F8F5F2;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -155,11 +156,10 @@ def _overview_css() -> None:
         }
 
         .mo-fact-card {
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 10px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             min-height: 96px;
             padding: 15px 16px;
         }
@@ -181,10 +181,10 @@ def _overview_css() -> None:
         }
 
         .mo-stat-panel {
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             margin: 8px 0 20px;
             overflow: hidden;
         }
@@ -197,8 +197,8 @@ def _overview_css() -> None:
         }
 
         .mo-stat-header {
-            background: #f8fafc;
-            border-bottom: 1px solid #e6edf5;
+            background: #F8F5F2;
+            border-bottom: 1px solid #E6E1DB;
             color: var(--ss-muted);
             font-size: 0.74rem;
             font-weight: 850;
@@ -284,7 +284,7 @@ def _overview_css() -> None:
         .mo-note {
             background: #fff7ed;
             border: 1px solid #fed7aa;
-            border-radius: 10px;
+            border-radius: 14px;
             color: #7c2d12;
             font-size: 0.9rem;
             line-height: 1.45;
@@ -294,9 +294,9 @@ def _overview_css() -> None:
 
         .mo-shot-type-key {
             align-items: center;
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 10px;
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
             color: var(--ss-muted);
             display: flex;
             flex-wrap: wrap;
@@ -352,13 +352,6 @@ def _overview_css() -> None:
             display: inline-block;
             height: 0;
             width: 0;
-        }
-
-        .mo-link-strip {
-            display: grid;
-            gap: 10px;
-            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            margin: 6px 0 16px;
         }
 
         @media (max-width: 860px) {
@@ -1400,14 +1393,7 @@ ma.page_header(
 )
 _overview_css()
 
-season = ma.select_match_season(key="match_overview_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-ma.section_heading("Select Match")
-match_row = ma.match_selector(matches, key="match_overview_match")
+season, matches, match_row, _ = ma.fixture_bar("match_overview_season", "match_overview_match")
 
 try:
     events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), limit=20000)

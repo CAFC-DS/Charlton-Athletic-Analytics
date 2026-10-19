@@ -8,14 +8,13 @@ import streamlit as st
 from utils import data, ui
 
 
-st.title("Opta Data")
-st.caption(
-    "Real Opta fixture, F24 event and F7 lineup data from CAFC_DB. The parsed staging views read the "
-    "DVMS_RAW payloads directly; the demo scouting snapshot is not used on this page."
+ui.page_header(
+    "Opta Data",
+    "Real Opta fixture, F24 event and F7 lineup data from CAFC_DB.",
+    eyebrow="Data hub",
+    basis="The parsed staging views read the DVMS_RAW payloads directly; the demo scouting snapshot is not used on this page.",
 )
-
 ui.data_refresh_control()
-st.divider()
 
 st.info(
     "Opta and Impect remain separate provider feeds: CAFC_DB does not yet contain populated cross-provider "
@@ -54,7 +53,7 @@ def _opta_charlton_match_count(season_value: str) -> int:
 controls = st.columns([0.8, 1.2])
 with controls[0]:
     preferred_season = data.preferred_season(season_options, match_count=_opta_charlton_match_count)
-    season = st.selectbox("Season", season_options, index=season_options.index(preferred_season))
+    season = st.selectbox("Season", season_options, index=season_options.index(preferred_season), width=240)
 with controls[1]:
     charlton_index = next(
         (index + 1 for index, team in enumerate(team_options) if "charlton" in team.casefold()),

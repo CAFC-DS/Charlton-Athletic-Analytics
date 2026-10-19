@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from utils import player_analysis as pa
+from utils import ui
 
 
 if "highlight_players" not in inspect.signature(pa.metric_scatter).parameters:
@@ -40,7 +41,10 @@ pa.page_header(
     "Plot players across two selected metrics to spot profiles, outliers and clusters.",
 )
 
-season = pa.select_season(key="player_scatter_season")
+with ui.filter_bar():
+    season_col, _ = st.columns([0.7, 3])
+    with season_col:
+        season = pa.select_season(key="player_scatter_season")
 players = _with_age(pa.load_player_data(season))
 if players.empty:
     st.warning("No players are available for the selected season.")
@@ -57,7 +61,7 @@ default_y = metrics.index("Assists /90") if "Assists /90" in metrics else min(1,
 pa.section_heading("Scatter controls")
 st.caption("Filter the player pool first, then choose how to highlight players inside that cohort. Leave team or position filters blank to include all.")
 
-with st.expander("Filters", expanded=True):
+with ui.controls_panel("filters"):
     metric_cols = st.columns(3)
     metric_view = metric_cols[0].selectbox(
         "Metric view",

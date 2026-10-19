@@ -266,7 +266,7 @@ def _reference_card(reference: pd.Series) -> None:
 def _similarity_bar(results: pd.DataFrame, title: str) -> go.Figure:
     plot_df = results.head(12).sort_values("Similarity", ascending=True).copy()
     plot_df["_Label"] = plot_df["Player"].apply(lambda value: charting.wrap_label(value, 18, 2))
-    colors = np.where(plot_df["Similarity"] >= 85, ui.CHARLTON_RED, "#7a7f87")
+    colors = np.where(plot_df["Similarity"] >= 85, ui.CHARLTON_RED, "#747A85")
     fig = go.Figure(
         go.Bar(
             x=plot_df["Similarity"],
@@ -336,7 +336,7 @@ def _comparison_radar(
             theta=theta,
             fill="toself",
             name=comparison_name,
-            line=dict(color="#344054", width=3),
+            line=dict(color="#4A4F59", width=3),
             fillcolor="rgba(52, 64, 84, 0.12)",
             hovertemplate="%{theta}<br>Percentile: %{r:.0f}<extra></extra>",
         )
@@ -439,15 +439,18 @@ pa.page_header(
 )
 _inject_metric_value_css()
 
-season = pa.select_season(key="similar_player_season")
-players = _prepare_players(pa.load_player_data(season))
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    season_col, reference_col = st.columns([0.7, 3])
+    with season_col:
+        season = pa.select_season(key="similar_player_season")
+    players = _prepare_players(pa.load_player_data(season))
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
+    with reference_col:
+        reference_index = _player_lookup_select(players)
 
 pa.section_heading("Reference Player")
-st.caption("Choose the player whose profile you want to match. The search then compares candidates against this reference profile.")
-reference_index = _player_lookup_select(players)
 reference = players.loc[reference_index]
 st.session_state["selected_player"] = str(reference.get("Player", ""))
 

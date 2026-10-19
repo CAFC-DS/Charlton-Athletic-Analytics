@@ -150,37 +150,20 @@ ma.page_header(
 st.markdown(
     """
     <style>
-    .spr-scoreboard {background:linear-gradient(135deg,#111111 0%,#241113 60%,#9c0214 130%);border-top:5px solid #c30017;border-radius:8px;color:#fff;margin:8px 0 20px;padding:20px 28px 24px;}
+    .spr-scoreboard {background:var(--black);border-top:4px solid var(--red);border-radius:14px;box-shadow:var(--shadow);color:#fff;margin:0 0 20px;padding:18px 28px 22px;}
     .spr-meta {color:rgba(255,255,255,.72);font-size:.82rem;font-weight:750;letter-spacing:.08em;text-align:center;text-transform:uppercase;}
     .spr-score-row {align-items:center;display:grid;gap:24px;grid-template-columns:1fr auto 1fr;margin-top:16px;}
     .spr-team {align-items:center;display:flex;font-size:clamp(1rem,1.7vw,1.35rem);font-weight:800;gap:14px;min-width:0;}
     .spr-team-home {justify-content:flex-end;text-align:right}.spr-team-away {justify-content:flex-start;text-align:left}
-    .spr-badge {height:58px;object-fit:contain;width:58px}.spr-fallback {color:#c30017;font-size:2rem}
-    .spr-score {align-items:center;display:flex;font-size:clamp(2rem,4vw,3.3rem);font-weight:350;gap:12px;letter-spacing:-.04em;white-space:nowrap}.spr-score span {color:rgba(255,255,255,.5)}
+    .spr-badge {height:58px;object-fit:contain;width:58px}.spr-fallback {color:#D4021D;font-size:2rem}
+    .spr-score {align-items:center;display:flex;font:800 clamp(2.2rem,4.4vw,3.6rem)/1 var(--display);font-stretch:75%;gap:12px;white-space:nowrap}.spr-score span {color:rgba(255,255,255,.5)}
     @media(max-width:700px){.spr-scoreboard{padding:16px}.spr-score-row{gap:10px}.spr-team{font-size:.86rem;gap:7px}.spr-badge{height:38px;width:38px}}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-event_seasons = data.list_seasons().get("matches", [])
-if not event_seasons:
-    st.warning("No event-level season is available for this report.")
-    st.stop()
-
-preferred_season = data.preferred_season(event_seasons)
-season = st.selectbox(
-    "Match Season",
-    event_seasons,
-    index=event_seasons.index(preferred_season),
-    key="set_piece_review_season",
-)
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="set_piece_review_match")
+season, matches, match_row, _ = ma.fixture_bar("set_piece_review_season", "set_piece_review_match")
 teams = ma.fixture_teams(match_row)
 if len(teams) != 2:
     st.warning("Both fixture teams are required for the comparison report.")

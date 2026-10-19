@@ -13,6 +13,7 @@ from utils import data
 from utils import match_analysis as ma
 from utils import set_piece_analysis as spa
 from utils import team_analysis as ta
+from utils import ui
 
 
 SET_PIECE_SOURCE = (
@@ -152,7 +153,7 @@ def _league_profiles(season: str) -> pd.DataFrame:
     return spa.aggregate_team_profiles(data.load_set_piece_sequences(season), ma.load_matches(season))
 
 
-with st.expander("Set Piece Analysis Controls", expanded=True):
+with ui.controls_panel():
     event_seasons = data.list_seasons().get("matches", [])
     if not event_seasons:
         st.warning("No event-level season is available for set-piece analysis.")
@@ -340,7 +341,7 @@ with attack_corner_tab:
             ),
             width="stretch",
         )
-    st.markdown("#### Attacking Corner Delivery by Side")
+    ui.section_heading("Attacking Corner Delivery by Side")
     st.markdown(f"**Key takeaway:** {spa.delivery_mix_takeaway(attacking_corners)}")
     st.caption(
         "Bars show each delivery's share within left- or right-side corners. Labels give the percentage and number of "

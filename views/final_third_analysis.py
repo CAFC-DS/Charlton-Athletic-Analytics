@@ -26,7 +26,7 @@ LANE_ORDER = [
 OUTCOME_COLORS = {
     "Successful": "#16a34a",
     "Unsuccessful": "#dc2626",
-    "Other": "#98a2b3",
+    "Other": "#9A9EA6",
 }
 
 SUCCESS_RATE_COLOR_MIN = 25
@@ -38,7 +38,7 @@ PENALTY_BOX_QUALITY_AXIS_MAX = 25
 
 
 def _visual_key(items: list[tuple[str, str, str]]) -> None:
-    key_items: list[str] = ['<span style="font-weight:600; color:#475467;">Key:</span>']
+    key_items: list[str] = ['<span style="font-weight:600; color:#4A4F59;">Key:</span>']
 
     for marker_type, color, label in items:
         safe_color = escape(str(color), quote=True)
@@ -70,7 +70,7 @@ def _visual_key(items: list[tuple[str, str, str]]) -> None:
 
     st.markdown(
         '<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px 2px; '
-        'font-size:0.9rem; color:#475467; margin:0.1rem 0 0.45rem 0;">'
+        'font-size:0.9rem; color:#4A4F59; margin:0.1rem 0 0.45rem 0;">'
         + "".join(key_items)
         + "</div>",
         unsafe_allow_html=True,
@@ -237,12 +237,12 @@ def _quantity_quality_chart(match_summary: pd.DataFrame, team_name: str, zone_la
 
     fig.add_vline(
         x=average_entries,
-        line=dict(color="#667085", width=1.4, dash="dash"),
+        line=dict(color="#747A85", width=1.4, dash="dash"),
     )
 
     fig.add_hline(
         y=average_quality,
-        line=dict(color="#667085", width=1.4, dash="dash"),
+        line=dict(color="#747A85", width=1.4, dash="dash"),
     )
 
     fig.update_layout(
@@ -261,8 +261,8 @@ def _quantity_quality_chart(match_summary: pd.DataFrame, team_name: str, zone_la
     x_axis_max = max(x_axis_max, float(plot_df["Entries"].max()) * 1.08)
     y_axis_max = max(y_axis_max, float(plot_df["Quality Score"].max()) * 1.12)
 
-    fig.update_xaxes(range=[0, x_axis_max], gridcolor="#e8edf3", zeroline=False)
-    fig.update_yaxes(range=[0, y_axis_max], gridcolor="#e8edf3", zeroline=False)
+    fig.update_xaxes(range=[0, x_axis_max], gridcolor="#E6E1DB", zeroline=False)
+    fig.update_yaxes(range=[0, y_axis_max], gridcolor="#E6E1DB", zeroline=False)
 
     return charting.polish_figure(fig, title, height=500)
 
@@ -274,7 +274,7 @@ def _outcome_chart(outcome_summary: pd.DataFrame, title: str) -> go.Figure:
         return charting.polish_figure(fig, title, height=360)
 
     plot_df = outcome_summary.copy()
-    plot_df["Color"] = plot_df["Outcome"].map(OUTCOME_COLORS).fillna("#98a2b3")
+    plot_df["Color"] = plot_df["Outcome"].map(OUTCOME_COLORS).fillna("#9A9EA6")
     plot_df = plot_df.sort_values("Entries", ascending=True)
 
     fig.add_trace(
@@ -332,7 +332,7 @@ def _crossing_type_chart(
                 x=ft.CROSS_TYPE_ORDER,
                 y=attempts,
                 name=outcome,
-                marker_color=OUTCOME_COLORS.get(outcome, "#98a2b3"),
+                marker_color=OUTCOME_COLORS.get(outcome, "#9A9EA6"),
                 text=[f"{value:,}" if value else "" for value in attempts],
                 textposition="outside",
                 cliponaxis=False,
@@ -589,7 +589,7 @@ def _lane_pitch_map(lane_summary: pd.DataFrame, title: str, selected_zone_label:
         ("High Effectiveness: 55%+ Success", "#16a34a"),
         ("Medium Effectiveness: 40-54% Success", "#f59e0b"),
         ("Low Effectiveness: Below 40% Success", "#dc2626"),
-        ("No Entries", "#98a2b3"),
+        ("No Entries", "#9A9EA6"),
     ]
     for label, color in legend_items:
         fig.add_trace(
@@ -647,7 +647,7 @@ def _lane_pitch_map(lane_summary: pd.DataFrame, title: str, selected_zone_label:
             ),
             showarrow=False,
             align="center",
-            font=dict(size=12, color="#101828"),
+            font=dict(size=12, color="#16181D"),
             bgcolor="rgba(255, 255, 255, 0.82)",
             bordercolor="rgba(16, 24, 40, 0.16)",
             borderwidth=1,
@@ -670,10 +670,10 @@ def _lane_pitch_map(lane_summary: pd.DataFrame, title: str, selected_zone_label:
         arrowhead=2,
         arrowsize=1,
         arrowwidth=2,
-        arrowcolor="#475467",
+        arrowcolor="#4A4F59",
         ax=0,
         ay=45,
-        font=dict(size=12, color="#475467"),
+        font=dict(size=12, color="#4A4F59"),
         bgcolor="rgba(255, 255, 255, 0.85)",
         borderpad=4,
     )
@@ -789,7 +789,7 @@ def _player_value_chart(player_summary: pd.DataFrame, title: str) -> go.Figure:
     fig.add_vline(
         x=average_total_value,
         line_dash="dash",
-        line_color="#667085",
+        line_color="#747A85",
         line_width=2,
     )
 
@@ -801,7 +801,7 @@ def _player_value_chart(player_summary: pd.DataFrame, title: str) -> go.Figure:
         text=f"Average total EV: {average_total_value:.2f}",
         showarrow=False,
         xanchor="left",
-        font=dict(size=11, color="#475467"),
+        font=dict(size=11, color="#4A4F59"),
     )
 
     x_max = max(
@@ -829,7 +829,7 @@ ta.page_header(
     FINAL_THIRD_SOURCE,
 )
 
-with st.expander("Final Third Analysis Controls", expanded=True):
+with ui.controls_panel():
     season = ma.select_match_season(key="final_third_analysis_season")
     matches = ma.load_matches(season)
     if matches.empty:
@@ -1032,7 +1032,7 @@ ta.section_heading("Quantity vs Quality")
 
 _visual_key(
     [
-        ("dash", "#667085", "Average Line"),
+        ("dash", "#747A85", "Average Line"),
         ("circle", "#16a34a", "High Success %"),
         ("circle", "#f59e0b", "Mid Success %"),
         ("circle", "#dc2626", "Low Success %"),
@@ -1081,7 +1081,7 @@ else:
         [
             ("circle", pitch.GREEN, "Successful Entry"),
             ("circle", pitch.RED, "Unsuccessful Entry"),
-            ("circle", "#98a2b3", "Other Entry"),
+            ("circle", "#9A9EA6", "Other Entry"),
         ]
     )
     st.caption(f"Showing the top {len(map_entries)} entries by Entry Value to keep the season map readable.")

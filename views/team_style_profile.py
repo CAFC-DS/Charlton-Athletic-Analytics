@@ -15,14 +15,7 @@ ta.page_header(
     "This page uses only the team metrics currently loaded in the app. It is not a tracking-data tactical model.",
 )
 
-season = ta.select_season("players", key="team_style_season")
-teams = ta.load_team_style_data(season)
-if teams.empty:
-    st.warning("No team data is available for this season.")
-    st.stop()
-
-st.caption("Use the team dropdown to choose which profile is drawn in the radar chart.")
-team_name = ta.team_selector(teams, key="team_style_team")
+season, teams, team_name = ta.season_team_bar("team_style_season", "team_style_team")
 scores = ta.style_scores(teams)
 matched = scores[scores["Team"] == team_name]
 if matched.empty:
@@ -158,29 +151,29 @@ st.markdown(
 
     .tsp-term-card {{
         background: #ffffff;
-        border: 1px solid #e6edf5;
-        border-left: 4px solid #c30017;
+        border: 1px solid #E6E1DB;
+        border-left: 4px solid #D4021D;
         border-radius: 8px;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
         padding: 14px 16px;
     }}
 
     .tsp-term-title {{
-        color: #172033;
+        color: #16181D;
         font-size: 1rem;
         font-weight: 850;
         margin-bottom: 6px;
     }}
 
     .tsp-term-made {{
-        color: #c30017;
+        color: #D4021D;
         font-size: 0.82rem;
         font-weight: 750;
         margin-bottom: 8px;
     }}
 
     .tsp-term-meaning {{
-        color: #667085;
+        color: #747A85;
         font-size: 0.88rem;
         line-height: 1.42;
     }}

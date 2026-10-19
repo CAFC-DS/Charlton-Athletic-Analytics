@@ -4,15 +4,13 @@
 import streamlit as st
 from utils import data, ui
 
-st.title("🗃️ Loader Output")
-st.write("Check the data feeding the app, and download it as CSV.")
-st.caption(
-    "App-ready output from the CAFC_DB loaders; fields may be joined, pivoted, normalised or derived — "
-    "for polished, presentation-ready tables see **Cleaned Tables** instead."
+ui.page_header(
+    "Loader Output",
+    "Check the data feeding the app and download it as CSV. Fields may be joined, pivoted or derived; "
+    "for presentation-ready tables see Cleaned Tables.",
+    eyebrow="Data hub",
 )
-
 ui.data_refresh_control()
-st.divider()
 
 seasons = data.list_seasons()
 

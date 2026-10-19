@@ -13,39 +13,6 @@ def _shot_map_css() -> None:
     st.markdown(
         """
         <style>
-        .sm-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-
-        .sm-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 14px;
-        }
-
-        .sm-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.5rem, 1.9vw, 1.9rem);
-            font-weight: 400;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-        }
-
-        .sm-summary-value-text {
-            font-size: clamp(0.86rem, 1vw, 1.02rem);
-            letter-spacing: -0.01em;
-            line-height: 1.2;
-            overflow-wrap: anywhere;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -53,16 +20,7 @@ def _shot_map_css() -> None:
 
 
 def _summary_card(label: str, value: object, *, text_value: bool = False) -> None:
-    value_class = "sm-summary-value sm-summary-value-text" if text_value else "sm-summary-value"
-    st.markdown(
-        f"""
-        <div class="sm-summary-card">
-            <div class="sm-summary-label">{ui.esc(label)}</div>
-            <div class="{value_class}">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value, text_value=text_value)
 
 
 ma.page_header(
@@ -72,14 +30,7 @@ ma.page_header(
 )
 _shot_map_css()
 
-season = ma.select_match_season(key="shot_map_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="shot_map_match")
-team_name = ma.team_selector_for_match(match_row, key="shot_map_team")
+season, matches, match_row, team_name = ma.fixture_bar("shot_map_season", "shot_map_match", "shot_map_team")
 events = data.load_match_events(
     season=season,
     match_id=match_row.get("MatchId"),

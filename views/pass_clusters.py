@@ -118,7 +118,7 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         showarrow=False,
         xanchor="left",
         yanchor="top",
-        font=dict(size=12, color="#c30017"),
+        font=dict(size=12, color="#D4021D"),
         bgcolor="rgba(255,255,255,0.78)",
         bordercolor="#f0ccd1",
         borderwidth=1,
@@ -131,9 +131,9 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         showarrow=False,
         xanchor="right",
         yanchor="bottom",
-        font=dict(size=12, color="#344054"),
+        font=dict(size=12, color="#4A4F59"),
         bgcolor="rgba(255,255,255,0.78)",
-        bordercolor="#d0d5dd",
+        bordercolor="#D6D0C8",
         borderwidth=1,
         borderpad=5,
     )
@@ -144,9 +144,9 @@ def _passing_map(clustered: pd.DataFrame, selected: str) -> go.Figure:
         showarrow=False,
         xanchor="left",
         yanchor="bottom",
-        font=dict(size=12, color="#7a7f87"),
+        font=dict(size=12, color="#747A85"),
         bgcolor="rgba(255,255,255,0.78)",
-        bordercolor="#d0d5dd",
+        bordercolor="#D6D0C8",
         borderwidth=1,
         borderpad=5,
     )
@@ -179,7 +179,7 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
         fig.update_layout(height=360)
         return fig
 
-    plot_df["Colour"] = np.where(plot_df["Percentile Gap"].ge(0), "#16803c", "#c30017")
+    plot_df["Colour"] = np.where(plot_df["Percentile Gap"].ge(0), "#16803c", "#D4021D")
     plot_df["Metric Label"] = plot_df["Metric"].map(lambda value: charting.wrap_label(value, width=20, max_lines=2))
     plot_df["Selected Label"] = [
         charting.metric_text(row["Selected"], row["Metric"])
@@ -213,7 +213,7 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
             ),
         )
     )
-    fig.add_vline(x=0, line=dict(color="#7a7f87", width=1.4, dash="dash"))
+    fig.add_vline(x=0, line=dict(color="#747A85", width=1.4, dash="dash"))
     max_gap = float(plot_df["Percentile Gap"].abs().max()) if not plot_df.empty else 50.0
     axis_limit = max(max_gap, 20) * 1.18
     fig = ta.polish_figure(fig, f"{team_name}: Passing Metric Gaps vs League Median")
@@ -231,7 +231,7 @@ def _metric_comparison_chart(clustered: pd.DataFrame, team_name: str) -> go.Figu
             xanchor="left",
             yanchor="middle",
             align="left",
-            font=dict(size=11, color="#344054"),
+            font=dict(size=11, color="#4A4F59"),
         )
     fig.update_layout(
         height=125 * len(plot_df) + 135,
@@ -290,9 +290,9 @@ def _cluster_summary(clustered: pd.DataFrame) -> pd.DataFrame:
 def _terminology_key() -> None:
     st.markdown(
         """
-        <div style="border:1px solid #e6edf5; border-radius:8px; padding:14px 16px; background:#ffffff;">
-            <div style="font-weight:800; color:#172033; margin-bottom:8px;">How to read this page</div>
-            <div style="color:#475467; line-height:1.45; font-size:0.9rem;">
+        <div style="border:1px solid #E6E1DB; border-radius:8px; padding:14px 16px; background:#ffffff;">
+            <div style="font-weight:800; color:#16181D; margin-bottom:8px;">How to read this page</div>
+            <div style="color:#4A4F59; line-height:1.45; font-size:0.9rem;">
                 <b>Pass Security</b> is the team's league percentile for Pass %. 
                 <b>Progression</b> is the average percentile of Passes to Final 3rd /90 and Bypassed Opponents /90.
                 The cluster names are rule-based labels, not machine-learning outputs.
@@ -311,13 +311,7 @@ ta.page_header(
 )
 _page_css()
 
-season = ta.select_season("players", key="pass_clusters_season")
-teams = ta.load_team_style_data(season)
-if teams.empty:
-    st.warning("No team data is available for this season.")
-    st.stop()
-
-team_name = ta.team_selector(teams, key="pass_clusters_team")
+season, teams, team_name = ta.season_team_bar("pass_clusters_season", "pass_clusters_team")
 clustered = ta.cluster_passing_profiles(teams)
 
 ta.section_heading("Selected Team Passing Identity")

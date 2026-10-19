@@ -20,7 +20,7 @@ def _radar_css() -> None:
         """
         <style>
         .pr-control-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.84rem;
             line-height: 1.4;
             margin: 4px 0 14px;
@@ -34,15 +34,15 @@ def _radar_css() -> None:
         }
 
         .pr-summary-card {
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
             min-height: 72px;
             padding: 10px 12px;
         }
 
         .pr-summary-label {
-            color: #667085;
+            color: #747A85;
             font-size: 0.62rem;
             font-weight: 850;
             letter-spacing: 0.04em;
@@ -60,7 +60,7 @@ def _radar_css() -> None:
         }
 
         .pr-radar-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.82rem;
             line-height: 1.35;
             margin: 0 0 8px;
@@ -247,16 +247,16 @@ def _radar_chart(rows: pd.DataFrame, selected_labels: list[str], metrics: list[s
                 range=[0, 100],
                 tickvals=[20, 40, 60, 80],
                 tickfont=dict(size=10, color=pa.GREY),
-                gridcolor="#e9edf3",
-                linecolor="#e9edf3",
+                gridcolor="#E6E1DB",
+                linecolor="#E6E1DB",
                 angle=90,
             ),
             angularaxis=dict(
                 rotation=90,
                 direction="clockwise",
                 tickfont=dict(size=12, color=pa.DARK),
-                gridcolor="#eef2f6",
-                linecolor="#eef2f6",
+                gridcolor="#ECE8E3",
+                linecolor="#ECE8E3",
             ),
         ),
         legend=dict(
@@ -314,40 +314,40 @@ pa.page_header(
 )
 _radar_css()
 
-season = pa.select_season(key="player_radar_season")
-players = pa.add_position_groups(pa.load_player_data(season))
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    season_col, mode_col, player_col, minutes_col = st.columns([0.7, 1.3, 2.6, 0.8])
+    with season_col:
+        season = pa.select_season(key="player_radar_season")
+    players = pa.add_position_groups(pa.load_player_data(season))
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
 
-options = _player_options(players)
+    options = _player_options(players)
+    mode = mode_col.radio("Radar type", ["Single player", "Player comparison"], horizontal=True, key="player_radar_mode")
+    if mode == "Single player":
+        default_index = _preferred_index(players, options)
+        selected_index = player_col.selectbox(
+            "Player",
+            options,
+            index=default_index,
+            format_func=lambda idx: _player_label(players, idx),
+            key="player_radar_single_player",
+        )
+        selected_indices = [selected_index]
+    else:
+        default_start = _preferred_index(players, options)
+        default_options = [options[default_start], *[idx for idx in options if idx != options[default_start]][:1]]
+        selected_indices = player_col.multiselect(
+            "Players",
+            options,
+            default=default_options[:2],
+            max_selections=4,
+            format_func=lambda idx: _player_label(players, idx),
+            key="player_radar_compare_players",
+        )
 
-pa.section_heading("Radar controls")
-mode = st.radio("Radar type", ["Single player", "Player comparison"], horizontal=True, key="player_radar_mode")
-control_cols = st.columns([2.6, 1])
-if mode == "Single player":
-    default_index = _preferred_index(players, options)
-    selected_index = control_cols[0].selectbox(
-        "Player",
-        options,
-        index=default_index,
-        format_func=lambda idx: _player_label(players, idx),
-        key="player_radar_single_player",
-    )
-    selected_indices = [selected_index]
-else:
-    default_start = _preferred_index(players, options)
-    default_options = [options[default_start], *[idx for idx in options if idx != options[default_start]][:1]]
-    selected_indices = control_cols[0].multiselect(
-        "Players",
-        options,
-        default=default_options[:2],
-        max_selections=4,
-        format_func=lambda idx: _player_label(players, idx),
-        key="player_radar_compare_players",
-    )
-
-min_minutes = control_cols[1].number_input("Minimum minutes", min_value=0, value=0, step=250)
+    min_minutes = minutes_col.number_input("Minimum minutes", min_value=0, value=0, step=250)
 if not selected_indices:
     st.info("Select at least one player to build the radar.")
     st.stop()

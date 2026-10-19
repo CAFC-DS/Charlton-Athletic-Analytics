@@ -39,14 +39,16 @@ RADAR_PRESETS = {
 }
 
 # --- DATA LOAD ---
-season = ta.select_season("players", key="team_radar_season")
-teams = ta.load_team_style_data(season)
-if teams.empty:
-    st.warning("No team data is available for this season.")
-    st.stop()
-
 # --- CONTROLS ---
-with st.expander("Radar Controls & Tactical Filters", expanded=True):
+with ui.controls_panel():
+    season_col, _ = st.columns([0.7, 3])
+    with season_col:
+        season = ta.select_season("players", key="team_radar_season")
+    teams = ta.load_team_style_data(season)
+    if teams.empty:
+        st.warning("No team data is available for this season.")
+        st.stop()
+
     # Team Selector (Multi-select)
     team_names = sorted(teams["Team"].dropna().unique().tolist())
 
@@ -123,7 +125,7 @@ with st.expander("Radar Controls & Tactical Filters", expanded=True):
                 selected_metrics.extend(chosen)
 
 # --- PAGE TABS ---
-tab_comp, tab_builder = st.tabs(["📊 Performance Comparison", "🛠️ Custom Radar Builder"])
+tab_comp, tab_builder = st.tabs(["Performance Comparison", "Custom Radar Builder"])
 
 with tab_comp:
     if not selected_teams:
@@ -166,7 +168,7 @@ with tab_comp:
                 "name": "League Median",
                 "values": league_vals,
                 "raw_values": [np.nan] * len(selected_metrics),
-                "color": "#98a2b3"
+                "color": "#9A9EA6"
             })
 
         # --- VISUALIZATION ---
@@ -258,7 +260,7 @@ with tab_comp:
             st.dataframe(pd.DataFrame(export_rows), width="stretch", hide_index=True)
 
 with tab_builder:
-    st.header("Custom Radar Builder")
+    ta.section_heading("Custom Radar Builder")
     st.markdown("""
         Create a bespoke radar chart by selecting specific metrics from the database. 
         Use the controls above to pick your team and metrics.
@@ -275,7 +277,7 @@ with tab_builder:
         else:
             builder_team = selected_teams[0]
             
-        st.subheader(f"Custom Profile: {builder_team}")
+        ta.section_heading(f"Custom Profile: {builder_team}")
         
         # Find the data for the selected builder team
         team_data = next((d for d in radar_data if d["name"] == builder_team), radar_data[0])
@@ -293,7 +295,7 @@ with tab_builder:
             st.plotly_chart(fig_custom, width="stretch", key="custom_radar_builder_plot")
             
         with b2:
-            st.markdown("### Metric Definitions & Values")
+            ta.section_heading("Metric Definitions & Values")
             for i, m in enumerate(selected_metrics):
                 meta = ta.TEAM_METRIC_META[m]
                 raw_value = team_data["raw_values"][i]

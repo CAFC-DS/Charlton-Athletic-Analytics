@@ -19,7 +19,7 @@ DIRECTION_ORDER = ["Progressive", "Lateral", "Regressive"]
 DIRECTION_COLORS = {
     "Progressive": ui.CHARLTON_RED,
     "Lateral": "#c69214",
-    "Regressive": "#344054",
+    "Regressive": "#4A4F59",
 }
 OUTCOME_ORDER = ["Complete", "Incomplete", "Other"]
 OUTCOME_COLORS = {
@@ -167,7 +167,7 @@ def _direction_accuracy_chart(passes: pd.DataFrame, title: str) -> go.Figure:
                     x=DIRECTION_ORDER,
                     y=values,
                     name=outcome,
-                    marker_color=OUTCOME_COLORS.get(outcome, "#7a7f87"),
+                    marker_color=OUTCOME_COLORS.get(outcome, "#747A85"),
                     text=[charting.metric_text(value, "Actions") for value in values],
                     textposition="outside",
                     cliponaxis=False,
@@ -233,7 +233,7 @@ def _pass_flow_map(passes: pd.DataFrame, title: str, max_passes: int) -> go.Figu
                 y_values += [row["Start Y"], row["End Y"], None]
 
             complete = outcome == "Complete"
-            line_color = DIRECTION_COLORS.get(direction, "#7a7f87")
+            line_color = DIRECTION_COLORS.get(direction, "#747A85")
             line_width = 4.6 if complete else 3.1
             line_dash = "solid" if complete else "dot"
             fig.add_trace(
@@ -292,7 +292,7 @@ def _pass_flow_map(passes: pd.DataFrame, title: str, max_passes: int) -> go.Figu
                     showlegend=False,
                     marker=dict(
                         size=7.5 if complete else 6,
-                        color=DIRECTION_COLORS.get(direction, "#7a7f87"),
+                        color=DIRECTION_COLORS.get(direction, "#747A85"),
                         opacity=0.94 if complete else 0.68,
                         line=dict(color="#ffffff", width=1.0),
                     ),
@@ -384,7 +384,7 @@ def _crossing_type_chart(passes: pd.DataFrame, title: str) -> go.Figure:
                     x=CROSS_TYPE_ORDER,
                     y=values,
                     name=outcome,
-                    marker_color=OUTCOME_COLORS.get(outcome, "#7a7f87"),
+                    marker_color=OUTCOME_COLORS.get(outcome, "#747A85"),
                     text=[charting.metric_text(value, "Actions") for value in values],
                     textposition="outside",
                     cliponaxis=False,
@@ -552,7 +552,7 @@ def _passing_matrix_heatmap(passes: pd.DataFrame, selected_player: str, title: s
             x=matrix.columns.tolist(),
             y=matrix.index.tolist(),
             colorscale=[
-                [0.0, "#f2f4f7"],
+                [0.0, "#ECE8E3"],
                 [0.0001, "#dc2626"],
                 [0.45, "#f59e0b"],
                 [1.0, "#15803d"],
@@ -630,7 +630,7 @@ def _lane_matrix_heatmap(passes: pd.DataFrame, title: str, height: int = 620) ->
             x=matrix.columns.tolist(),
             y=matrix.index.tolist(),
             colorscale=[
-                [0.0, "#f2f4f7"],
+                [0.0, "#ECE8E3"],
                 [0.0001, "#dc2626"],
                 [0.45, "#f59e0b"],
                 [1.0, "#15803d"],
@@ -683,14 +683,19 @@ pa.page_header(
 )
 
 pa.section_heading("Season Passing Profile")
-season = pa.select_season(key="passing_dashboard_season")
-players = pa.passing_table(pa.load_player_data(season))
-selected_player: str | None = None
+with ui.controls_panel("season"):
+    season_col, player_col = st.columns([0.7, 3])
+    with season_col:
+        season = pa.select_season(key="passing_dashboard_season")
+    players = pa.passing_table(pa.load_player_data(season))
+    selected_player: str | None = None
+    if not players.empty:
+        with player_col:
+            selected_player = pa.player_selector(players, key="passing_dashboard_player", label="Season Player")
 
 if players.empty:
     st.warning("No players are available for the selected player season.")
 else:
-    selected_player = pa.player_selector(players, key="passing_dashboard_player", label="Season Player")
 
     required = ["Pass %", "Passes to Final 3rd /90", "Bypassed Opponents /90"]
     missing = [metric for metric in required if metric not in players.columns]
@@ -724,14 +729,7 @@ st.caption(
     "regressive is the same threshold in the opposite direction."
 )
 
-match_season = ma.select_match_season(key="passing_dashboard_match_season")
-matches = ma.load_matches(match_season)
-if matches.empty:
-    st.warning("No match data is available for the selected match season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="passing_dashboard_match")
-team_name = ma.team_selector_for_match(match_row, key="passing_dashboard_team")
+match_season, matches, match_row, team_name = ma.fixture_bar("passing_dashboard_match_season", "passing_dashboard_match", "passing_dashboard_team")
 
 raw_events = data.load_match_events(
     season=match_season,

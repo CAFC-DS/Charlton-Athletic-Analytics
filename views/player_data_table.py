@@ -4,6 +4,7 @@
 import streamlit as st
 
 from utils import player_analysis as pa
+from utils import ui
 
 
 pa.page_header(
@@ -12,23 +13,22 @@ pa.page_header(
     visualisation_note=False,
 )
 
-season = pa.select_season(key="player_table_season")
-players = pa.add_metric_ranks(pa.load_player_data(season))
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.controls_panel():
+    c0, c1, c2, c3 = st.columns([0.7, 1.3, 1.3, 1])
+    with c0:
+        season = pa.select_season(key="player_table_season")
+    players = pa.add_metric_ranks(pa.load_player_data(season))
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
 
-metrics = pa.metric_columns(players)
-team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
-position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
-
-pa.section_heading("Table controls")
-st.caption("Use these controls to filter players, choose a sorting metric and control which columns are visible.")
-c1, c2, c3 = st.columns(3)
-teams = c1.multiselect("Teams", team_options, default=team_options)
-positions = c2.multiselect("Positions", position_options, default=position_options)
-sort_metric = c3.selectbox("Sort by", metrics, key="player_table_sort")
-columns = st.multiselect("Columns", players.columns.tolist(), default=[col for col in ["Player", "Team", "Position", "Minutes"] + metrics if col in players.columns])
+    metrics = pa.metric_columns(players)
+    team_options = sorted(players["Team"].dropna().astype(str).unique()) if "Team" in players else []
+    position_options = sorted(players["_Position Display"].dropna().astype(str).unique())
+    teams = c1.multiselect("Teams", team_options, default=team_options)
+    positions = c2.multiselect("Positions", position_options, default=position_options)
+    sort_metric = c3.selectbox("Sort by", metrics, key="player_table_sort")
+    columns = st.multiselect("Columns", players.columns.tolist(), default=[col for col in ["Player", "Team", "Position", "Minutes"] + metrics if col in players.columns])
 
 filtered = players.copy()
 if teams and "Team" in filtered:

@@ -25,7 +25,7 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#7a7f87"
+GREY = "#747A85"
 POSITION_COLOURS = {
     "Goalkeeper": "#c69214",
     "Centre Back": DARK,
@@ -51,30 +51,6 @@ def _pbi_css() -> None:
     st.markdown(
         """
         <style>
-        .pbi-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 100px;
-            padding: 14px 16px;
-        }
-        .pbi-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.85rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 12px;
-        }
-        .pbi-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.25rem, 1.7vw, 1.65rem);
-            font-weight: 400;
-            letter-spacing: -0.02em;
-            line-height: 1.1;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -82,15 +58,7 @@ def _pbi_css() -> None:
 
 
 def _summary_card(label: str, value: object) -> None:
-    st.markdown(
-        f"""
-        <div class="pbi-summary-card">
-            <div class="pbi-summary-label">{ui.esc(label)}</div>
-            <div class="pbi-summary-value">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value)
 
 
 def _team_options(matches: pd.DataFrame) -> list[str]:
@@ -205,7 +173,7 @@ def _productivity_figure(productivity: pd.DataFrame, player_name: str, title: st
         return charting.polish_figure(fig, title, height=380)
     plot_df = productivity[productivity["Stage"].ne("Build-Up Sequences")]
     fig.add_trace(
-        go.Bar(y=plot_df["Stage"], x=plot_df["Team Conversion %"], orientation="h", name="Team (all sequences)", marker_color="#98a2b3")
+        go.Bar(y=plot_df["Stage"], x=plot_df["Team Conversion %"], orientation="h", name="Team (all sequences)", marker_color="#9A9EA6")
     )
     fig.add_trace(
         go.Bar(y=plot_df["Stage"], x=plot_df["Player Conversion %"], orientation="h", name=f"{player_name} touched", marker_color=RED)
@@ -305,37 +273,38 @@ pa.page_header(
 )
 _pbi_css()
 
-control_cols = st.columns([1.0, 1.2, 0.9, 0.9])
-with control_cols[0]:
-    seasons = data.list_seasons().get("matches", [])
-    if not seasons:
-        st.warning("No match seasons are available.")
+with ui.filter_bar():
+    control_cols = st.columns([1.0, 1.2, 0.9, 0.9])
+    with control_cols[0]:
+        seasons = data.list_seasons().get("matches", [])
+        if not seasons:
+            st.warning("No match seasons are available.")
+            st.stop()
+        preferred_season = data.preferred_season(seasons)
+        season = st.selectbox("Season", seasons, index=seasons.index(preferred_season), key="pbi_season")
+
+    matches = ma.load_matches(season)
+    if matches.empty:
+        st.warning("No match data is available for this season.")
         st.stop()
-    preferred_season = data.preferred_season(seasons)
-    season = st.selectbox("Season", seasons, index=seasons.index(preferred_season), key="pbi_season")
 
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
+    teams = _team_options(matches)
+    if not teams:
+        st.warning("No teams are available from the selected match data.")
+        st.stop()
 
-teams = _team_options(matches)
-if not teams:
-    st.warning("No teams are available from the selected match data.")
-    st.stop()
+    with control_cols[1]:
+        team_name = st.selectbox("Team", teams, index=_default_team_index(teams), key="pbi_team")
 
-with control_cols[1]:
-    team_name = st.selectbox("Team", teams, index=_default_team_index(teams), key="pbi_team")
+    all_fixtures = _team_fixture_rows(matches, team_name)
+    if all_fixtures.empty:
+        st.warning("No fixtures are available for the selected team.")
+        st.stop()
 
-all_fixtures = _team_fixture_rows(matches, team_name)
-if all_fixtures.empty:
-    st.warning("No fixtures are available for the selected team.")
-    st.stop()
-
-with control_cols[2]:
-    window = st.selectbox("Match window", ["Full Season", "Last 10", "Last 5"], key="pbi_window")
-with control_cols[3]:
-    bucket_size = st.selectbox("Time-window size (min)", [10, 15, 30], index=1, key="pbi_bucket_size")
+    with control_cols[2]:
+        window = st.selectbox("Match window", ["Full Season", "Last 10", "Last 5"], key="pbi_window")
+    with control_cols[3]:
+        bucket_size = st.selectbox("Time-window size (min)", [10, 15, 30], index=1, key="pbi_bucket_size")
 
 venue_fixtures = all_fixtures
 if window == "Last 10":

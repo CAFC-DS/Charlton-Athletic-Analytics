@@ -196,7 +196,7 @@ def _player_effectiveness_chart(summary: pd.DataFrame, zone_label: str, min_entr
             x=plot_df["Other"],
             orientation="h",
             name="Other",
-            marker=dict(color="#98a2b3"),
+            marker=dict(color="#9A9EA6"),
             customdata=customdata,
             hovertemplate=(
                 "%{y}"
@@ -236,7 +236,7 @@ def _player_effectiveness_chart(summary: pd.DataFrame, zone_label: str, min_entr
         xaxis_title="Entries",
         yaxis_title="",
     )
-    fig.update_xaxes(rangemode="tozero", gridcolor="#e8edf3")
+    fig.update_xaxes(rangemode="tozero", gridcolor="#E6E1DB")
     fig.update_yaxes(automargin=True)
     return fig
 
@@ -247,14 +247,7 @@ ma.page_header(
     "CAFC_DB Impect provider events supply adjusted start/end coordinates, outcomes, receivers, pass PXT and team xT through the app's event adapter.",
 )
 
-season = ma.select_match_season(key="final_third_match_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="final_third_match")
-team_name = ma.team_selector_for_match(match_row, key="final_third_team")
+season, matches, match_row, team_name = ma.fixture_bar("final_third_match_season", "final_third_match", "final_third_team")
 events = data.load_match_events(
     season=season,
     match_id=match_row.get("MatchId"),

@@ -64,7 +64,7 @@ def _player_xt_chart(contribution: pd.DataFrame, title: str) -> go.Figure:
             hovertemplate="<b>%{y}</b><br>Total xT: %{x:.3f}<br>Actions: %{customdata[0]:.0f}<br>xT/Action: %{customdata[1]:.4f}<extra></extra>",
         )
     )
-    fig.add_vline(x=0, line=dict(color="#7a7f87", width=1.2, dash="dash"))
+    fig.add_vline(x=0, line=dict(color="#747A85", width=1.2, dash="dash"))
     fig.update_layout(height=max(360, 26 * len(plot_df) + 120), xaxis_title="Total Expected Threat (PXT)", yaxis_title="")
     return ma.polish_figure(fig, title)
 
@@ -105,7 +105,7 @@ def _season_xt_trend_chart(team_matches: pd.DataFrame, title: str) -> go.Figure:
             hovertemplate="Rolling avg xT: %{y:.3f}<extra></extra>",
         )
     )
-    fig.add_hline(y=0, line=dict(color="#7a7f87", width=1.2, dash="dash"))
+    fig.add_hline(y=0, line=dict(color="#747A85", width=1.2, dash="dash"))
     fig.update_layout(height=460, xaxis_title="Gameweek (chronological)", yaxis_title="Expected Threat (PXT)", legend=dict(orientation="h", y=1.1))
     return ma.polish_figure(fig, title)
 
@@ -116,14 +116,7 @@ ma.page_header(
     XT_BASIS,
 )
 
-season = ma.select_match_season(key="xt_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="xt_match")
-team_name = ma.team_selector_for_match(match_row, key="xt_team")
+season, matches, match_row, team_name = ma.fixture_bar("xt_season", "xt_match", "xt_team")
 
 team_matches = ma.team_match_rows(matches, team_name)
 if team_matches.empty:

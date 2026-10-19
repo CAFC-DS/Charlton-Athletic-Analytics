@@ -13,6 +13,7 @@ from utils import data
 from utils import defensive_analysis as da
 from utils import match_analysis as ma
 from utils import team_analysis as ta
+from utils import ui
 
 
 DEFENSIVE_SOURCE = (
@@ -166,52 +167,52 @@ ta.page_header(
     ),
 )
 
-ta.section_heading("Defensive Analysis Controls")
-control_columns = st.columns([1.0, 1.35, 0.9, 0.9])
-with control_columns[0]:
-    defensive_seasons = data.list_seasons().get("matches", [])
-    if not defensive_seasons:
-        st.warning("No match seasons are available.")
+with ui.filter_bar():
+    control_columns = st.columns([1.0, 1.35, 0.9, 0.9])
+    with control_columns[0]:
+        defensive_seasons = data.list_seasons().get("matches", [])
+        if not defensive_seasons:
+            st.warning("No match seasons are available.")
+            st.stop()
+        preferred_season = data.preferred_season(defensive_seasons)
+        season = st.selectbox(
+            "Match Season",
+            defensive_seasons,
+            index=defensive_seasons.index(preferred_season),
+            key="defensive_actions_season",
+        )
+
+    matches = ma.load_matches(season)
+    if matches.empty:
+        st.warning("No match data is available for the selected season.")
         st.stop()
-    preferred_season = data.preferred_season(defensive_seasons)
-    season = st.selectbox(
-        "Match Season",
-        defensive_seasons,
-        index=defensive_seasons.index(preferred_season),
-        key="defensive_actions_season",
-    )
 
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for the selected season.")
-    st.stop()
+    teams = _team_options(matches)
+    if not teams:
+        st.warning("No teams are available from the selected match data.")
+        st.stop()
 
-teams = _team_options(matches)
-if not teams:
-    st.warning("No teams are available from the selected match data.")
-    st.stop()
+    with control_columns[1]:
+        team_name = st.selectbox(
+            "Team",
+            teams,
+            index=_default_team_index(teams),
+            key="defensive_actions_team",
+        )
 
-with control_columns[1]:
-    team_name = st.selectbox(
-        "Team",
-        teams,
-        index=_default_team_index(teams),
-        key="defensive_actions_team",
-    )
+    all_team_fixtures = _team_fixture_rows(matches, team_name)
+    if all_team_fixtures.empty:
+        st.warning("No fixtures are available for the selected team.")
+        st.stop()
 
-all_team_fixtures = _team_fixture_rows(matches, team_name)
-if all_team_fixtures.empty:
-    st.warning("No fixtures are available for the selected team.")
-    st.stop()
-
-with control_columns[2]:
-    venue = st.selectbox("Venue", ["All", "Home", "Away"], key="defensive_actions_venue")
-with control_columns[3]:
-    window = st.selectbox(
-        "Match Window",
-        ["Full Season", "Last 5", "Last 10", "Custom"],
-        key="defensive_actions_window",
-    )
+    with control_columns[2]:
+        venue = st.selectbox("Venue", ["All", "Home", "Away"], key="defensive_actions_venue")
+    with control_columns[3]:
+        window = st.selectbox(
+            "Match Window",
+            ["Full Season", "Last 5", "Last 10", "Custom"],
+            key="defensive_actions_window",
+        )
 
 venue_fixtures = all_team_fixtures.copy()
 if venue != "All":
@@ -274,12 +275,12 @@ st.caption(
 )
 st.html(
     """
-    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px 22px; padding:10px 14px; margin:4px 0 12px; border:1px solid #e6edf5; border-radius:8px; background:#ffffff; font-size:0.88rem;">
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px 22px; padding:10px 14px; margin:4px 0 12px; border:1px solid #E6E1DB; border-radius:8px; background:#ffffff; font-size:0.88rem;">
         <strong>Profile Colour Key:</strong>
         <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:12px; height:12px; border-radius:3px; background:#16803c; display:inline-block;"></span><span>Upper third &middot; Score 67+</span></span>
         <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:12px; height:12px; border-radius:3px; background:#d89216; display:inline-block;"></span><span>Middle third &middot; Score 33&ndash;66.9</span></span>
-        <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:12px; height:12px; border-radius:3px; background:#c30017; display:inline-block;"></span><span>Lower third &middot; Score below 33</span></span>
-        <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:30px; border-top:2px dashed #7a7f87; display:inline-block;"></span><span>League midpoint &middot; Score 50</span></span>
+        <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:12px; height:12px; border-radius:3px; background:#D4021D; display:inline-block;"></span><span>Lower third &middot; Score below 33</span></span>
+        <span style="display:inline-flex; align-items:center; gap:7px;"><span style="width:30px; border-top:2px dashed #747A85; display:inline-block;"></span><span>League midpoint &middot; Score 50</span></span>
     </div>
     """
 )

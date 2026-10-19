@@ -14,14 +14,7 @@ ma.page_header(
     "CAFC_DB Impect provider events supply pass PXT, shot PXT, shot xG and team xT values where available.",
 )
 
-season = ma.select_match_season(key="momentum_match_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="momentum_match")
-team_name = ma.team_selector_for_match(match_row, key="momentum_team")
+season, matches, match_row, team_name = ma.fixture_bar("momentum_match_season", "momentum_match", "momentum_team")
 events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), limit=9000)
 fixture_id = data.opta_fixture_id_for_match(match_row)
 events = data.append_opta_card_events(events, fixture_id)

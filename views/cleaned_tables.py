@@ -9,11 +9,12 @@
 import streamlit as st
 from utils import data, ui
 
-st.title("🧹 Cleaned Tables")
-st.caption("Presentation-ready versions of Players, Teams and Matches — sorted, rounded and relabelled for reading rather than auditing.")
-
+ui.page_header(
+    "Cleaned Tables",
+    "Presentation-ready Players, Teams and Matches: sorted, rounded and relabelled for reading rather than auditing.",
+    eyebrow="Data hub",
+)
 ui.data_refresh_control()
-st.divider()
 
 
 def _clean_position(position: str) -> str:

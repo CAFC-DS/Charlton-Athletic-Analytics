@@ -23,7 +23,7 @@ def _player_actions_css() -> None:
         }
 
         .pma-context-grid {
-            grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         }
 
         .pma-spotlight-grid {
@@ -35,70 +35,12 @@ def _player_actions_css() -> None:
         .pma-control-note {
             background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 10px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        }
-
-        .pma-card {
-            border-top: 3px solid var(--ss-accent);
-            min-height: 104px;
-            padding: 14px 16px;
-        }
-
-        .pma-card-dark {
-            background:
-                radial-gradient(circle at 94% 14%, rgba(255, 255, 255, 0.13), transparent 24%),
-                linear-gradient(135deg, #111111 0%, #271115 60%, #9c0214 148%);
-            border-color: rgba(255, 255, 255, 0.14);
-            color: #ffffff;
-        }
-
-        .pma-card-dark .pma-label,
-        .pma-card-dark .pma-helper {
-            color: rgba(255, 255, 255, 0.72);
-        }
-
-        .pma-card-dark .pma-value {
-            color: #ffffff;
-        }
-
-        .pma-label {
-            color: var(--ss-muted);
-            font-size: 0.74rem;
-            font-weight: 850;
-            letter-spacing: 0.08em;
-            line-height: 1.25;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-
-        .pma-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.45rem, 1.9vw, 1.85rem);
-            font-weight: 500;
-            letter-spacing: -0.04em;
-            line-height: 1.05;
-            overflow-wrap: anywhere;
-        }
-
-        .pma-value-text {
-            font-size: clamp(0.9rem, 1.08vw, 1.08rem);
-            font-weight: 850;
-            letter-spacing: -0.02em;
-            line-height: 1.22;
-        }
-
-        .pma-helper {
-            color: var(--ss-muted);
-            font-size: 0.82rem;
-            font-weight: 650;
-            line-height: 1.35;
-            margin-top: 8px;
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
         }
 
         .pma-control-note {
-            background: #f8fafc;
+            background: #F8F5F2;
             border-left: 4px solid var(--ss-accent);
             color: var(--ss-muted);
             font-size: 0.88rem;
@@ -160,9 +102,6 @@ def _player_actions_css() -> None:
         }
 
         @media (max-width: 760px) {
-            .pma-card {
-                min-height: 92px;
-            }
         }
         </style>
         """,
@@ -264,16 +203,7 @@ def _summarise_players(filtered: pd.DataFrame) -> pd.DataFrame:
 
 
 def _card(label: str, value: object, helper: str | None = None, *, text_value: bool = False, dark: bool = False) -> str:
-    value_class = "pma-value pma-value-text" if text_value else "pma-value"
-    card_class = "pma-card pma-card-dark" if dark else "pma-card"
-    helper_html = f'<div class="pma-helper">{ui.esc(helper)}</div>' if helper else ""
-    return (
-        f'<div class="{card_class}">'
-        f'<div class="pma-label">{ui.esc(label)}</div>'
-        f'<div class="{value_class}">{ui.esc(value)}</div>'
-        f"{helper_html}"
-        "</div>"
-    )
+    return ui.figure_tile_html(label, value, helper, text_value=text_value, dark=dark)
 
 
 def _render_context_cards(match_row: pd.Series, season: str | None, team_name: str, events: pd.DataFrame) -> None:
@@ -494,7 +424,7 @@ def _action_mix_chart(filtered: pd.DataFrame, title: str) -> go.Figure:
             labels=action_mix["Action Label"],
             values=action_mix["Actions"],
             hole=0.62,
-            marker=dict(colors=[ui.CHARLTON_RED, ui.CHARLTON_BLACK, "#7a7f87", ui.CHARLTON_DEEP_RED, "#c69214", "#b42318", "#475467", "#98a2b3"]),
+            marker=dict(colors=[ui.CHARLTON_RED, ui.CHARLTON_BLACK, "#747A85", ui.CHARLTON_DEEP_RED, "#c69214", "#b42318", "#4A4F59", "#9A9EA6"]),
             textinfo="percent",
             textposition="inside",
             customdata=np.stack([action_mix["Action Type"], action_mix["Actions"], action_mix["Action Share"]], axis=-1),
@@ -528,14 +458,7 @@ ma.page_header(
 )
 _player_actions_css()
 
-season = ma.select_match_season(key="player_actions_match_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="player_actions_match")
-team_name = ma.team_selector_for_match(match_row, key="player_actions_team")
+season, matches, match_row, team_name = ma.fixture_bar("player_actions_match_season", "player_actions_match", "player_actions_team")
 events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), team=team_name, limit=9000)
 events = events[events["Player"].notna()].copy()
 events = _prepare_events(events)

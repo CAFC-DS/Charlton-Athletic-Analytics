@@ -12,7 +12,7 @@ from utils import ui
 
 GREEN = "#16a34a"
 AMBER = "#f59e0b"
-GREY = "#98a2b3"
+GREY = "#9A9EA6"
 
 
 def _overview_css() -> None:
@@ -27,56 +27,17 @@ def _overview_css() -> None:
         }
 
         .po-card {
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             min-height: 78px;
-            padding: 10px 12px;
-        }
-
-        .po-card-label {
-            color: #667085;
-            font-size: 0.62rem;
-            font-weight: 850;
-            letter-spacing: 0.04em;
-            line-height: 1.18;
-            text-transform: uppercase;
-        }
-
-        .po-card-value {
-            color: #111111;
-            font-size: 0.92rem;
-            font-weight: 800;
-            line-height: 1.15;
-            margin-top: 5px;
-            overflow-wrap: anywhere;
-        }
-
-        .po-card-sub {
-            color: #667085;
-            font-size: 0.72rem;
-            line-height: 1.25;
-            margin-top: 4px;
-            overflow-wrap: anywhere;
-        }
-
-        .po-link-grid {
-            display: grid;
-            gap: 10px;
-            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-            margin: 2px 0 22px;
-        }
-
-        .po-link-grid [data-testid="stPageLink"] a {
-            border: 1px solid #d8dde6;
-            border-radius: 8px;
             padding: 10px 12px;
         }
 
         .po-chart-legend {
             align-items: center;
-            color: #475467;
+            color: #4A4F59;
             display: flex;
             flex-wrap: wrap;
             gap: 10px 16px;
@@ -118,14 +79,7 @@ def _clean_text(value: object, fallback: str = "N/A") -> str:
 
 
 def _snapshot_card(label: str, value: object, sub: object | None = None) -> str:
-    sub_html = f'<div class="po-card-sub">{ui.esc(_clean_text(sub))}</div>' if sub is not None else ""
-    return (
-        '<div class="po-card">'
-        f'<div class="po-card-label">{ui.esc(label)}</div>'
-        f'<div class="po-card-value">{ui.esc(_clean_text(value))}</div>'
-        f"{sub_html}"
-        "</div>"
-    )
+    return ui.figure_tile_html(label, value, sub)
 
 
 def _snapshot_grid(row: pd.Series, metrics: list[str]) -> None:
@@ -160,9 +114,9 @@ def _ranking_legend(metric: str, players: pd.DataFrame) -> None:
     average = pd.to_numeric(players[metric], errors="coerce").mean()
     html = (
         '<div class="po-chart-legend">'
-        '<span class="po-legend-item"><span class="po-legend-swatch" style="background:#c30017"></span>Selected player</span>'
+        '<span class="po-legend-item"><span class="po-legend-swatch" style="background:#D4021D"></span>Selected player</span>'
         '<span class="po-legend-item"><span class="po-legend-swatch" style="background:#16a34a"></span>At or above average</span>'
-        '<span class="po-legend-item"><span class="po-legend-swatch" style="background:#98a2b3"></span>Below average</span>'
+        '<span class="po-legend-item"><span class="po-legend-swatch" style="background:#9A9EA6"></span>Below average</span>'
         f'<span class="po-legend-item"><span class="po-legend-line"></span>Average {ui.esc(pa.metric_value(average, metric))}</span>'
         "</div>"
     )
@@ -256,15 +210,18 @@ pa.page_header(
 )
 _overview_css()
 
-season = pa.select_season(key="player_overview_season")
-players = pa.add_metric_ranks(pa.load_player_data(season))
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    season_col, player_col = st.columns([0.7, 3])
+    with season_col:
+        season = pa.select_season(key="player_overview_season")
+    players = pa.add_metric_ranks(pa.load_player_data(season))
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
+    with player_col:
+        player_name = pa.player_selector(players, key="player_overview_player")
 
 pa.section_heading("Selected player snapshot")
-st.caption("Use the dropdown to set the player context for the summary cards below.")
-player_name = pa.player_selector(players, key="player_overview_player")
 row = pa.player_row(players, player_name)
 metrics = pa.metric_columns(players)
 _snapshot_grid(row, metrics)

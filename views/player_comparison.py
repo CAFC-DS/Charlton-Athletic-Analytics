@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from utils import player_analysis as pa
+from utils import ui
 
 
 def _sort_key(row: pd.Series) -> tuple[str, str, str]:
@@ -38,7 +39,7 @@ def _comparison_key() -> None:
                 gap: 10px 18px;
                 align-items: center;
                 margin: -4px 0 12px;
-                color: #344054;
+                color: #4A4F59;
                 font-size: 0.88rem;
             }
             .pc-key-item {
@@ -57,7 +58,7 @@ def _comparison_key() -> None:
             .pc-bad { background: #dc2626; }
             .pc-note {
                 flex-basis: 100%;
-                color: #667085;
+                color: #747A85;
             }
         </style>
         <div class="pc-key">
@@ -75,23 +76,25 @@ pa.page_header(
     "Compare two to four players using role-aware percentiles, so each player is benchmarked against their closest positional peer group.",
 )
 
-season = pa.select_season(key="player_comparison_season")
-players = pa.add_position_groups(pa.load_player_data(season))
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
+with ui.filter_bar():
+    season_col, players_col = st.columns([0.7, 4])
+    with season_col:
+        season = pa.select_season(key="player_comparison_season")
+    players = pa.add_position_groups(pa.load_player_data(season))
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
 
-pa.section_heading("Comparison controls")
-st.caption("Choose two to four players. Percentiles are calculated within each selected player's positional peer group.")
-player_options = _player_options(players)
-default = player_options[:2] if len(player_options) >= 2 else player_options
-selected_indices = st.multiselect(
-    "Players",
-    player_options,
-    default=default,
-    max_selections=4,
-    format_func=lambda idx: _player_label(players, idx),
-)
+    player_options = _player_options(players)
+    default = player_options[:2] if len(player_options) >= 2 else player_options
+    selected_indices = players_col.multiselect(
+        "Players (2 to 4)",
+        player_options,
+        default=default,
+        max_selections=4,
+        format_func=lambda idx: _player_label(players, idx),
+    )
+st.caption("Percentiles are calculated within each selected player's positional peer group.")
 
 if len(selected_indices) < 2:
     st.info("Select at least two players to build a comparison.")

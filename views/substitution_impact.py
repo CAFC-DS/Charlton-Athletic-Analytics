@@ -38,10 +38,10 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#7a7f87"
-LIGHT_GREY = "#d0d5dd"
+GREY = "#747A85"
+LIGHT_GREY = "#D6D0C8"
 SCORE_STATE_COLOURS = {"Winning": GREEN, "Drawing": AMBER, "Losing": RED}
-SHIFT_TYPE_COLOURS = {"More Attacking": RED, "Like-for-Like": "#98a2b3", "More Defensive": DARK, "Unclear": "#c9cdd4"}
+SHIFT_TYPE_COLOURS = {"More Attacking": RED, "Like-for-Like": "#9A9EA6", "More Defensive": DARK, "Unclear": "#c9cdd4"}
 SHOT_TYPE_IDS = (13, 14, 15, 16)
 SHOT_ON_TARGET_TYPE_IDS = (15, 16)
 PASS_TYPE_ID = 1
@@ -54,42 +54,18 @@ def _subs_css() -> None:
     st.markdown(
         """
         <style>
-        .si-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 100px;
-            padding: 14px 16px;
-        }
-        .si-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.85rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 12px;
-        }
-        .si-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.25rem, 1.7vw, 1.65rem);
-            font-weight: 400;
-            letter-spacing: -0.02em;
-            line-height: 1.1;
-        }
         .si-note {
             padding: 13px 15px;
             margin: 6px 0 16px;
-            border: 1px solid #dfe5ec;
+            border: 1px solid #E6E1DB;
             border-left: 4px solid #2563eb;
             border-radius: 9px;
-            background: #f8fafc;
+            background: #F8F5F2;
             font-size: 0.89rem;
-            color: #253045;
+            color: #16181D;
             line-height: 1.5;
         }
-        .si-note.caution { border-left-color: #c30017; }
+        .si-note.caution { border-left-color: #D4021D; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -97,15 +73,7 @@ def _subs_css() -> None:
 
 
 def _summary_card(label: str, value: object) -> None:
-    st.markdown(
-        f"""
-        <div class="si-summary-card">
-            <div class="si-summary-label">{ui.esc(label)}</div>
-            <div class="si-summary-value">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value)
 
 
 def _note(text: str, *, caution: bool = False) -> None:
@@ -170,7 +138,7 @@ def _timeline_figure(match_subs: pd.DataFrame, goals: pd.DataFrame, home: str, a
     fig = go.Figure()
     lanes = {home: 1, away: 0}
     for team_name, y in lanes.items():
-        fig.add_hline(y=y, line=dict(color="#e2e7ee", width=14), layer="below")
+        fig.add_hline(y=y, line=dict(color="#E6E1DB", width=14), layer="below")
 
     team_subs = match_subs.copy()
     team_subs["_Time"] = team_subs.apply(_sub_time_minutes, axis=1)
@@ -365,7 +333,7 @@ def _before_after_figure(before: dict[str, float], after: dict[str, float], titl
     after_values = [after.get(m, 0) for m in metrics]
     fig.add_trace(
         go.Bar(
-            y=metrics, x=before_values, orientation="h", name="Before", marker_color="#98a2b3",
+            y=metrics, x=before_values, orientation="h", name="Before", marker_color="#9A9EA6",
             text=[f"{v:.1f}" if pd.notna(v) else "N/A" for v in before_values], textposition="outside",
         )
     )

@@ -37,39 +37,6 @@ def _phase_average_css() -> None:
     st.markdown(
         """
         <style>
-        .pap-summary-card {
-            background: var(--ss-panel);
-            border: 1px solid var(--ss-border);
-            border-radius: 8px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 102px;
-            padding: 14px 16px;
-        }
-
-        .pap-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.875rem;
-            font-weight: 650;
-            line-height: 1.25;
-            margin-bottom: 14px;
-        }
-
-        .pap-summary-value {
-            color: var(--ss-ink);
-            display: block;
-            font-size: clamp(1.35rem, 1.75vw, 1.75rem);
-            font-weight: 400;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-        }
-
-        .pap-summary-value-text {
-            font-size: clamp(0.80rem, 0.90vw, 0.96rem);
-            letter-spacing: -0.01em;
-            line-height: 1.2;
-            overflow-wrap: anywhere;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -77,16 +44,7 @@ def _phase_average_css() -> None:
 
 
 def _summary_card(label: str, value: object, *, text_value: bool = False) -> None:
-    value_class = "pap-summary-value pap-summary-value-text" if text_value else "pap-summary-value"
-    st.markdown(
-        f"""
-        <div class="pap-summary-card">
-            <div class="pap-summary-label">{ui.esc(label)}</div>
-            <div class="{value_class}">{ui.esc(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.figure_tile(label, value, text_value=text_value)
 
 
 def _phase_label(value: object) -> str:
@@ -365,14 +323,9 @@ using_impect = data_source == "Impect (phases)"
 
 if using_impect:
     # ---- IMPECT DATA FLOW (existing) --------------------------------------------
-    season = ma.select_match_season(key="phase_avg_positions_season")
-    matches = ma.load_matches(season)
-    if matches.empty:
-        st.warning("No match data is available for this season.")
-        st.stop()
-
-    match_row = ma.match_selector(matches, key="phase_avg_positions_match")
-    team_name = ma.team_selector_for_match(match_row, key="phase_avg_positions_team")
+    season, matches, match_row, team_name = ma.fixture_bar(
+        "phase_avg_positions_season", "phase_avg_positions_match", "phase_avg_positions_team"
+    )
     events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), limit=20000)
     if events.empty:
         st.info("No event-level rows are available for this selected match.")

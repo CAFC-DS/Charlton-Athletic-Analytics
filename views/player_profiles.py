@@ -41,16 +41,16 @@ def _profile_css() -> None:
         """
         <style>
         .profile-shell {
-            background: #ffffff;
-            border: 1px solid #d8dde6;
-            border-radius: 8px;
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
             padding: 20px 22px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            box-shadow: var(--ss-shadow);
             margin: 8px 0 18px;
         }
 
         .profile-topline {
-            color: #667085;
+            color: #747A85;
             font-size: 0.74rem;
             font-weight: 800;
             letter-spacing: 0.12em;
@@ -74,7 +74,7 @@ def _profile_css() -> None:
         }
 
         .profile-meta {
-            color: #475467;
+            color: #4A4F59;
             display: flex;
             flex-wrap: wrap;
             gap: 6px 10px;
@@ -84,7 +84,7 @@ def _profile_css() -> None:
         }
 
         .profile-meta span {
-            border-right: 1px solid #d8dde6;
+            border-right: 1px solid #E6E1DB;
             padding-right: 10px;
             overflow-wrap: anywhere;
         }
@@ -131,34 +131,15 @@ def _profile_css() -> None:
         }
 
         .profile-tile {
-            background: #f8fafc;
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
+            background: #F8F5F2;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
             min-height: 74px;
             padding: 10px 12px;
         }
 
-        .profile-tile-label {
-            color: #667085;
-            font-size: 0.62rem;
-            font-weight: 800;
-            letter-spacing: 0.04em;
-            line-height: 1.18;
-            text-transform: uppercase;
-            overflow-wrap: anywhere;
-        }
-
-        .profile-tile-value {
-            color: #111111;
-            font-size: 1.04rem;
-            font-weight: 820;
-            line-height: 1.18;
-            margin-top: 4px;
-            overflow-wrap: anywhere;
-        }
-
         .profile-note {
-            color: #667085;
+            color: #747A85;
             font-size: 0.84rem;
             line-height: 1.45;
             margin-top: 8px;
@@ -170,12 +151,7 @@ def _profile_css() -> None:
 
 
 def _tile(label: str, value: object) -> str:
-    return (
-        '<div class="profile-tile">'
-        f'<div class="profile-tile-label">{ui.esc(label)}</div>'
-        f'<div class="profile-tile-value">{ui.esc(value)}</div>'
-        "</div>"
-    )
+    return ui.figure_tile_html(label, value)
 
 
 def _profile_header(row: pd.Series, role: str, score: object, metric_rows: pd.DataFrame) -> None:
@@ -270,16 +246,6 @@ pa.page_header(
 )
 _profile_css()
 
-season = pa.select_season(key="player_profiles_season")
-players = pa.load_player_data(season)
-if players.empty:
-    st.warning("No players are available for the selected season.")
-    st.stop()
-
-players = pa.add_position_groups(players)
-preferred = _selected_from_state()
-
-
 def _selector_label(idx: int, sort_mode: str) -> str:
     player = players.loc[idx]
     if sort_mode == "Club A-Z":
@@ -287,26 +253,35 @@ def _selector_label(idx: int, sort_mode: str) -> str:
     return f"{player.get('Player', 'Unknown')} | {player.get('Team', 'Unknown')} | {player.get('_Position Display', 'Unknown')}"
 
 
-pa.section_heading("Profile selector")
-selector_cols = st.columns([2.2, 0.8, 0.8])
-sort_mode = selector_cols[1].selectbox(
-    "Sort by",
-    ["Player A-Z", "Club A-Z"],
-    index=0,
-    key="player_profile_sort",
-)
-options = _sorted_player_options(players, sort_mode)
-default_index = 0
-if preferred:
-    found = players.index[players["Player"].astype(str) == preferred].tolist()
-    if found and found[0] in options:
-        default_index = options.index(found[0])
-selected_index = selector_cols[0].selectbox(
-    "Player", options, index=default_index, format_func=lambda idx: _selector_label(idx, sort_mode)
-)
-selected_player = str(players.loc[selected_index, "Player"])
-st.session_state["selected_player"] = selected_player
-min_minutes = selector_cols[2].number_input("Minimum minutes", min_value=0, value=0, step=250)
+with ui.filter_bar():
+    season_col, player_col, sort_col, minutes_col = st.columns([0.7, 2.2, 0.8, 0.8])
+    with season_col:
+        season = pa.select_season(key="player_profiles_season")
+    players = pa.load_player_data(season)
+    if players.empty:
+        st.warning("No players are available for the selected season.")
+        st.stop()
+
+    players = pa.add_position_groups(players)
+    preferred = _selected_from_state()
+    sort_mode = sort_col.selectbox(
+        "Sort by",
+        ["Player A-Z", "Club A-Z"],
+        index=0,
+        key="player_profile_sort",
+    )
+    options = _sorted_player_options(players, sort_mode)
+    default_index = 0
+    if preferred:
+        found = players.index[players["Player"].astype(str) == preferred].tolist()
+        if found and found[0] in options:
+            default_index = options.index(found[0])
+    selected_index = player_col.selectbox(
+        "Player", options, index=default_index, format_func=lambda idx: _selector_label(idx, sort_mode)
+    )
+    selected_player = str(players.loc[selected_index, "Player"])
+    st.session_state["selected_player"] = selected_player
+    min_minutes = minutes_col.number_input("Minimum minutes", min_value=0, value=0, step=250)
 
 filtered_players = players[pd.to_numeric(players["Minutes"], errors="coerce").fillna(0) >= min_minutes].copy()
 if selected_index not in filtered_players.index:

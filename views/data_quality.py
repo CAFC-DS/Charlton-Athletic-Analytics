@@ -9,21 +9,20 @@ import pandas as pd
 import streamlit as st
 from utils import data, ui
 
-st.title("✅ Data Quality Checks")
-st.caption(
-    "Checks a football analyst would want verified before trusting this data — "
-    "valid ranges, duplicates, missing identifiers and consistency across datasets."
+ui.page_header(
+    "Data Quality Checks",
+    "Checks an analyst would want verified before trusting this data: valid ranges, duplicates, "
+    "missing identifiers and consistency across datasets.",
+    eyebrow="Data hub",
 )
-
 ui.data_refresh_control()
-st.divider()
 
 if not data.USE_MOCK_DATA:
     source_status = data.data_source_preflight()
     source_status["Status"] = source_status["Available"].map(
         {True: "✅ Available", False: "❌ Unavailable"}
     )
-    st.subheader("Production source availability")
+    ui.section_heading("Production source availability")
     st.caption(
         "These probes use fully qualified CAFC_DB relations; they do not rely on the empty PUBLIC schema."
     )
@@ -34,7 +33,6 @@ if not data.USE_MOCK_DATA:
     )
     if not source_status["Available"].all():
         st.error("One or more CAFC_DB source layers is unavailable to the current Snowflake role.")
-    st.divider()
 
 # Every dataset below takes an optional season; without one, each loader
 # silently resolves to whichever season sorts last (the newest -- often the
@@ -45,7 +43,7 @@ if not season_options:
     st.warning("No seasons are available to check.")
     st.stop()
 preferred_season = data.preferred_season(season_options)
-season = st.selectbox("Season", season_options, index=season_options.index(preferred_season))
+season = st.selectbox("Season", season_options, index=season_options.index(preferred_season), width=240)
 
 players = data.load_players(season=season)
 teams = data.load_teams(season=season)
@@ -59,7 +57,7 @@ def check(name: str, ok: bool, detail: str, offending: pd.DataFrame | None = Non
 
 
 def render_checks(title: str, checks: list[dict]) -> None:
-    st.subheader(title)
+    ui.section_heading(title)
     summary = pd.DataFrame([{"Check": c["Check"], "Status": c["Status"], "Detail": c["Detail"]} for c in checks])
     st.dataframe(summary, width="stretch", hide_index=True)
     for c in checks:
@@ -96,7 +94,6 @@ render_checks(f"Players ({len(players)} rows)", [
     check("At least one per-90 metric is populated per player", len(missing_metrics) == 0,
           f"{len(missing_metrics)} player(s) with every tracked per-90 metric blank -- likely a join/merge gap rather than a genuinely metric-free player.", missing_metrics),
 ])
-st.divider()
 
 # ---- Teams ---------------------------------------------------------------
 missing_team = teams[teams["Team"].isna()]
@@ -114,7 +111,6 @@ render_checks(f"Teams ({len(teams)} rows)", [
     check(f"Squad count matches expected league size ({expected_teams})", len(teams) == expected_teams,
           f"{len(teams)} teams loaded."),
 ])
-st.divider()
 
 # ---- Matches -------------------------------------------------------------
 missing_scores = matches[matches["Home Goals"].isna() | matches["Away Goals"].isna()]

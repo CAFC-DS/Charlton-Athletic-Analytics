@@ -12,17 +12,9 @@ ta.page_header(
     ta.TEAM_STYLE_SOURCE,
 )
 
-season = ta.select_season("players", key="team_scatter_season")
-teams = ta.load_team_style_data(season)
-if teams.empty:
-    st.warning("No team data is available for this season.")
-    st.stop()
-
-team_name = ta.team_selector(teams, key="team_scatter_team")
+season, teams, team_name = ta.season_team_bar("team_scatter_season", "team_scatter_team")
 metrics = ta.metric_columns(teams)
 
-ta.section_heading("Scatter controls")
-st.caption("Use the dropdowns to choose the two team metrics and optional bubble-size metric.")
 c1, c2, c3 = st.columns(3)
 x_metric = c1.selectbox("X axis", metrics, index=0, key="team_scatter_x")
 y_metric = c2.selectbox("Y axis", metrics, index=1 if len(metrics) > 1 else 0, key="team_scatter_y")

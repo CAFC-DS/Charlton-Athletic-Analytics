@@ -96,7 +96,7 @@ POSITION_COLORS = {
     "Defenders": ui.CHARLTON_BLACK,
     "Midfielders": ui.CHARLTON_RED,
     "Attackers": "#12b76a",
-    "Unknown": "#7a7f87",
+    "Unknown": "#747A85",
 }
 AVERAGE_LINE_COLOR = "#2563eb"
 
@@ -106,10 +106,10 @@ def _rating_css() -> None:
         """
         <style>
         .pmr-note {
-            background: #f8fafc;
+            background: #F8F5F2;
             border: 1px solid var(--ss-border);
             border-left: 4px solid var(--ss-accent);
-            border-radius: 10px;
+            border-radius: 14px;
             color: var(--ss-muted);
             font-size: 0.9rem;
             line-height: 1.5;
@@ -129,11 +129,10 @@ def _rating_css() -> None:
         }
 
         .pmr-card {
-            background: #ffffff;
-            border: 1px solid #e6edf5;
-            border-radius: 10px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            background: var(--ss-panel);
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             min-height: 132px;
             padding: 15px 16px;
         }
@@ -167,48 +166,12 @@ def _rating_css() -> None:
             margin: 8px 0 18px;
         }
 
-        .pmr-summary-card {
-            background: #ffffff;
-            border: 1px solid var(--ss-border);
-            border-radius: 10px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 96px;
-            padding: 13px 15px;
-        }
-
-        .pmr-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.74rem;
-            font-weight: 850;
-            letter-spacing: 0.08em;
-            line-height: 1.25;
-            margin-bottom: 9px;
-            text-transform: uppercase;
-        }
-
-        .pmr-summary-value {
-            color: var(--ss-ink);
-            font-size: clamp(1.35rem, 1.8vw, 1.7rem);
-            font-weight: 600;
-            letter-spacing: -0.04em;
-            line-height: 1.08;
-            overflow-wrap: anywhere;
-        }
-
-        .pmr-summary-value-text {
-            font-size: clamp(0.86rem, 1vw, 1.02rem);
-            font-weight: 850;
-            letter-spacing: -0.02em;
-            line-height: 1.2;
-        }
-
         .pmr-colour-key {
             align-items: center;
-            background: #ffffff;
+            background: var(--ss-panel);
             border: 1px solid var(--ss-border);
-            border-radius: 10px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+            border-radius: 14px;
+            box-shadow: var(--ss-shadow);
             display: flex;
             flex-wrap: wrap;
             gap: 10px 16px;
@@ -335,13 +298,7 @@ def _card_grid(cards: list[dict[str, str]]) -> None:
 
 
 def _summary_card(label: str, value: object, *, text_value: bool = False) -> str:
-    value_class = "pmr-summary-value pmr-summary-value-text" if text_value else "pmr-summary-value"
-    return (
-        '<div class="pmr-summary-card">'
-        f'<div class="pmr-summary-label">{ui.esc(label)}</div>'
-        f'<div class="{value_class}">{ui.esc(value)}</div>'
-        "</div>"
-    )
+    return ui.figure_tile_html(label, value, text_value=text_value)
 
 
 def _render_rating_summary(leader: pd.Series, ranked: pd.DataFrame) -> None:
@@ -431,7 +388,7 @@ def _team_color_map(team_labels: list[str]) -> dict[str, str]:
 def _color_values(frame: pd.DataFrame, color_by: str) -> tuple[list[str], list[str]]:
     if color_by == "Position Group":
         labels = frame["Position Group"].fillna("Unknown").astype(str).tolist()
-        return [POSITION_COLORS.get(label, "#7a7f87") for label in labels], labels
+        return [POSITION_COLORS.get(label, "#747A85") for label in labels], labels
 
     labels = frame["Team"].fillna("Unknown").astype(str).tolist() if "Team" in frame else ["Unknown"] * len(frame)
     color_map = _team_color_map(labels)
@@ -443,7 +400,7 @@ def _colour_key_items(frame: pd.DataFrame, color_by: str) -> list[tuple[str, str
         return []
     if color_by == "Position Group":
         groups = [group for group in POSITION_ORDER if group in set(frame["Position Group"].dropna().astype(str))]
-        return [(group, POSITION_COLORS.get(group, "#7a7f87")) for group in groups]
+        return [(group, POSITION_COLORS.get(group, "#747A85")) for group in groups]
 
     labels = frame["Team"].fillna("Unknown").astype(str).tolist() if "Team" in frame else ["Unknown"]
     color_map = _team_color_map(labels)
@@ -561,15 +518,6 @@ def _ranking_table(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.sort_values("Rating Proxy", ascending=False)[display_cols]
 
 
-def _select_match_season_for_ratings() -> str | None:
-    seasons = data.list_seasons().get("matches", [])
-    if not seasons:
-        st.caption("No match season selector is available from the data source.")
-        return None
-    default_season = data.preferred_season(seasons)
-    return st.selectbox("Match Season", seasons, index=seasons.index(default_season), key="ratings_match_season")
-
-
 def _match_players(season: str | None, match_row: pd.Series) -> pd.DataFrame:
     try:
         players = data.load_match_player_ratings_input(season, match_row.get("MatchId"))
@@ -592,7 +540,7 @@ ma.page_header(
 )
 _rating_css()
 
-with st.expander("What the Rating Consists Of", expanded=True):
+with st.expander("What the rating consists of"):
     st.markdown(
         """
         <div class="pmr-note">
@@ -605,13 +553,7 @@ with st.expander("What the Rating Consists Of", expanded=True):
     ma.section_heading("Current Proxy Components")
     _component_cards()
 
-match_season = _select_match_season_for_ratings()
-matches = ma.load_matches(match_season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="ratings_match")
+match_season, matches, match_row, _ = ma.fixture_bar("ratings_match_season", "ratings_match")
 players = _match_players(match_season, match_row)
 if players.empty:
     st.info("No player rows are available for this fixture yet.")

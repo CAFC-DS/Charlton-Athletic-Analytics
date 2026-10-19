@@ -50,42 +50,6 @@ def _event_table_css() -> None:
             margin: 8px 0 18px;
         }
 
-        .edt-summary-card {
-            background: #ffffff;
-            border: 1px solid var(--ss-border);
-            border-radius: 10px;
-            border-top: 3px solid var(--ss-accent);
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            min-height: 92px;
-            padding: 13px 15px;
-        }
-
-        .edt-summary-label {
-            color: var(--ss-muted);
-            font-size: 0.74rem;
-            font-weight: 850;
-            letter-spacing: 0.08em;
-            line-height: 1.25;
-            margin-bottom: 9px;
-            text-transform: uppercase;
-        }
-
-        .edt-summary-value {
-            color: var(--ss-ink);
-            font-size: clamp(1.25rem, 1.65vw, 1.6rem);
-            font-weight: 650;
-            letter-spacing: -0.035em;
-            line-height: 1.08;
-            overflow-wrap: anywhere;
-        }
-
-        .edt-summary-value-text {
-            font-size: clamp(0.82rem, 0.96vw, 1rem);
-            font-weight: 850;
-            letter-spacing: -0.015em;
-            line-height: 1.2;
-        }
-
         .edt-chart-note {
             color: var(--ss-muted);
             font-size: 0.86rem;
@@ -105,13 +69,7 @@ def _event_table_css() -> None:
 
 
 def _summary_card(label: str, value: object, *, text_value: bool = False) -> str:
-    value_class = "edt-summary-value edt-summary-value-text" if text_value else "edt-summary-value"
-    return (
-        '<div class="edt-summary-card">'
-        f'<div class="edt-summary-label">{ui.esc(label)}</div>'
-        f'<div class="{value_class}">{ui.esc(value)}</div>'
-        "</div>"
-    )
+    return ui.figure_tile_html(label, value, text_value=text_value)
 
 
 def _render_fixture_summary(match_row, events, season: str | None) -> None:
@@ -299,13 +257,7 @@ ma.page_header(
 )
 _event_table_css()
 
-season = ma.select_match_season(key="event_table_season")
-matches = ma.load_matches(season)
-if matches.empty:
-    st.warning("No match data is available for this season.")
-    st.stop()
-
-match_row = ma.match_selector(matches, key="event_table_match")
+season, matches, match_row, _ = ma.fixture_bar("event_table_season", "event_table_match")
 events = data.load_match_events(season=season, match_id=match_row.get("MatchId"), limit=12000)
 
 ma.section_heading("Selected fixture")

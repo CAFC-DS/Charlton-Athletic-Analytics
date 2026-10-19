@@ -22,9 +22,9 @@ RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
 GREEN = "#16803c"
 AMBER = "#d89216"
-GREY = "#7a7f87"
-LIGHT_GREY = "#e6edf5"
-BLUE = "#344054"
+GREY = "#747A85"
+LIGHT_GREY = "#E6E1DB"
+BLUE = "#4A4F59"
 
 REGAIN_ACTION_TYPES = {"LOOSE_BALL_REGAIN", "INTERCEPTION", "GK_CATCH"}
 
@@ -331,7 +331,7 @@ def identity_chart(components: pd.DataFrame, title: str) -> go.Figure:
             x=[100] * len(scores),
             y=scores["Identity"],
             orientation="h",
-            marker_color="#eef2f6",
+            marker_color="#ECE8E3",
             hoverinfo="skip",
             showlegend=False,
         )
