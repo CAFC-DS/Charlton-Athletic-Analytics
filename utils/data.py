@@ -5416,7 +5416,6 @@ def _mock_teams() -> pd.DataFrame:
     return df
 
 
-@st.cache_data
 def _mock_match_player_ratings_input(season: str | None, match_id: object) -> pd.DataFrame:
     matches = load_matches(season)
     fixture = matches[matches["MatchId"].astype(str).eq(str(match_id))]
