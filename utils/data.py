@@ -1666,6 +1666,9 @@ def _team_match_counts(iteration_ids: list[int]) -> pd.DataFrame:
     return rows[columns] if not rows.empty else pd.DataFrame(columns=columns)
 
 
+# Cached whole: the SQL is cached by conn.query, but the pandas reshaping
+# behind it otherwise reruns on every widget interaction.
+@st.cache_data(ttl="30m", show_spinner=False)
 def load_players(season: str | None = None) -> pd.DataFrame:
     """Player season metrics reconstructed from CAFC_DB's long Impect facts."""
     if USE_MOCK_DATA:
@@ -2943,6 +2946,9 @@ def _event_defensive_player_match_sums(
     return _clean_defensive_player_match_sums(_event_defensive_player_rows(events))
 
 
+# Cached whole: the SQL is cached by conn.query, but the pandas reshaping
+# behind it otherwise reruns on every widget interaction.
+@st.cache_data(ttl="30m", show_spinner=False)
 def load_squad_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     """One row per team-match, pivoted from authoritative match KPI facts."""
     if USE_MOCK_DATA:
@@ -2984,6 +2990,9 @@ def load_squad_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     return _clean_defensive_squad_match_sums(rows)
 
 
+# Cached whole: the SQL is cached by conn.query, but the pandas reshaping
+# behind it otherwise reruns on every widget interaction.
+@st.cache_data(ttl="30m", show_spinner=False)
 def load_player_defensive_match_sums(season: str | None = None) -> pd.DataFrame:
     """Player defensive match totals reconstructed from long Impect KPI rows."""
     if USE_MOCK_DATA:

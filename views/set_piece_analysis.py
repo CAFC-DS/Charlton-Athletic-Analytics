@@ -145,6 +145,13 @@ ta.page_header(
     ),
 )
 
+@st.cache_data(ttl="30m", show_spinner=False)
+def _league_profiles(season: str) -> pd.DataFrame:
+    """Every team's full-season profile; depends only on the season, so it is
+    cached rather than rebuilt (24 teams) on each widget change."""
+    return spa.aggregate_team_profiles(data.load_set_piece_sequences(season), ma.load_matches(season))
+
+
 with st.expander("Set Piece Analysis Controls", expanded=True):
     event_seasons = data.list_seasons().get("matches", [])
     if not event_seasons:
@@ -207,7 +214,7 @@ if season_sequences.empty:
     st.stop()
 
 selected_sequences = spa.filter_sequences_to_matches(season_sequences, selected_match_ids)
-league_profiles = spa.aggregate_team_profiles(season_sequences, matches)
+league_profiles = _league_profiles(season)
 selected_profile = spa.aggregate_team_profiles(selected_sequences, selected_fixtures, teams=[team_name])
 own_sequences = selected_sequences[selected_sequences["Team"].astype(str).eq(str(team_name))].copy()
 against_sequences = selected_sequences[selected_sequences["Opponent"].astype(str).eq(str(team_name))].copy()
