@@ -374,7 +374,7 @@ def _methodology_cards() -> None:
             },
             {
                 "title": "Displayed Pool Percentiles",
-                "body": "Each metric is converted to a percentile within the selected fixture-team player pool, then combined into a 0-100 proxy score.",
+                "body": "Each player's per-90 output in this fixture is converted to a percentile among the fixture's players who meet the minimum minutes, then combined into a 0-100 proxy score.",
             },
         ]
     )
@@ -561,57 +561,34 @@ def _ranking_table(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.sort_values("Rating Proxy", ascending=False)[display_cols]
 
 
-def _select_player_metric_season(match_season: str | None) -> str | None:
-    seasons = data.list_seasons().get("players", [])
-    if not seasons:
-        st.caption("No player metric season selector is available from the data source.")
-        return None
-    default_index = seasons.index(match_season) if match_season in seasons else len(seasons) - 1
-    return st.selectbox("Player Metric Season", seasons, index=default_index, key="ratings_player_season")
-
-
 def _select_match_season_for_ratings() -> str | None:
-    season_map = data.list_seasons()
-    seasons = season_map.get("matches", [])
+    seasons = data.list_seasons().get("matches", [])
     if not seasons:
         st.caption("No match season selector is available from the data source.")
         return None
-    player_seasons = set(season_map.get("players", []))
-    # Search from the most recent season backward: some seasons are listed by
-    # the data source without having any actual match rows yet (or any more),
-    # and matching the oldest such season by scanning forward left this page
-    # defaulting to a dead season with a warning on first load.
-    default_index = next(
-        (index for index in range(len(seasons) - 1, -1, -1) if seasons[index] in player_seasons),
-        len(seasons) - 1,
-    )
-    return st.selectbox("Match Season", seasons, index=default_index, key="ratings_match_season")
+    default_season = data.preferred_season(seasons)
+    return st.selectbox("Match Season", seasons, index=seasons.index(default_season), key="ratings_match_season")
 
 
-def _player_metric_teams(player_season: str | None) -> set[str]:
+def _match_players(season: str | None, match_row: pd.Series) -> pd.DataFrame:
     try:
-        players = data.load_players(season=player_season)
-    except Exception:
-        return set()
-    if players.empty or "Team" not in players:
-        return set()
-    return set(players["Team"].dropna().astype(str))
-
-
-def _matches_with_player_metric_teams(matches: pd.DataFrame, metric_teams: set[str]) -> pd.DataFrame:
-    if matches.empty or not metric_teams or not {"Home", "Away"}.issubset(matches.columns):
-        return matches
-    home_available = matches["Home"].astype(str).isin(metric_teams)
-    away_available = matches["Away"].astype(str).isin(metric_teams)
-    filtered = matches[home_available | away_available].copy()
-    return filtered if not filtered.empty else matches
+        players = data.load_match_player_ratings_input(season, match_row.get("MatchId"))
+    except Exception as exc:
+        st.warning(f"Could not load player metrics for this fixture: {exc}")
+        return pd.DataFrame()
+    if players.empty:
+        return players
+    players = players.copy()
+    players["_Position Display"] = players["Position"].apply(ui.clean_position) if "Position" in players else "Unknown position"
+    players["Minutes"] = pd.to_numeric(players["Minutes"], errors="coerce")
+    return players
 
 
 ma.page_header(
     "Player Match Ratings",
-    "Rank players from the selected fixture teams with a transparent, position-aware rating proxy.",
+    "Rank the players who featured in the selected fixture with a transparent, position-aware rating proxy.",
     ma.PLAYER_PROXY_SOURCE,
-    "The audited Impect tables do not expose an official single-match player rating. This page uses player iteration averages for the teams in the selected fixture, so it should be read as a transparent comparison proxy rather than an official match score.",
+    "Impect does not publish an official single-match player rating. This page scores each player's per-90 output in the selected fixture against the other players in that fixture, so short appearances are noisy and the score should be read as a comparison proxy rather than an official match rating.",
 )
 _rating_css()
 
@@ -634,21 +611,18 @@ if matches.empty:
     st.warning("No match data is available for this season.")
     st.stop()
 
-player_season = _select_player_metric_season(match_season)
-metric_teams = _player_metric_teams(player_season)
-rating_matches = _matches_with_player_metric_teams(matches, metric_teams)
-if len(rating_matches) < len(matches):
-    st.caption("Match options are filtered to fixtures containing at least one team with player metric rows for the selected player season.")
-
-match_row = ma.match_selector(rating_matches, key="ratings_match")
-players = ma.player_rows_for_match(match_row, player_season)
-ratings = _rating_table(players)
-if ratings.empty:
-    st.info("Player aggregate rows are not available for the teams in this selected fixture.")
+match_row = ma.match_selector(matches, key="ratings_match")
+players = _match_players(match_season, match_row)
+if players.empty:
+    st.info("No player rows are available for this fixture yet.")
     st.stop()
 
-team_options = sorted(ratings["Team"].dropna().astype(str).unique().tolist()) if "Team" in ratings else []
-position_options = [group for group in POSITION_ORDER if group in set(ratings["Position Group"].dropna().astype(str))]
+team_options = sorted(players["Team"].dropna().astype(str).unique().tolist()) if "Team" in players else []
+position_options = [
+    group
+    for group in POSITION_ORDER
+    if group in set(players.get("Position", pd.Series(dtype=object)).apply(_position_group))
+]
 
 ma.section_heading("Ranking Controls")
 control_cols = st.columns([1.2, 1.1, 1.1, 0.8, 0.8])
@@ -669,9 +643,22 @@ if ranking_scope in {"By Position Group", "By Team + Position Group"} and positi
 else:
     control_cols[2].caption("Position filter applies to position-ranking scopes.")
 
-max_minutes = int(np.nanmax(pd.to_numeric(ratings.get("Minutes", pd.Series([0])), errors="coerce").fillna(0)))
-default_minutes = min(180, max_minutes)
-minimum_minutes = control_cols[3].slider("Minimum Minutes", 0, max(max_minutes, 1), default_minutes, step=30)
+max_minutes = int(np.ceil(players["Minutes"].fillna(0).max()))
+minimum_minutes = control_cols[3].slider(
+    "Minimum Minutes",
+    0,
+    max(max_minutes, 1),
+    min(30, max_minutes),
+    step=5,
+    help="Per-90 rates from a short cameo are unreliable, so cameos are left out of the scoring pool by default.",
+)
+
+# Percentiles are taken within the eligible pool, so a cameo's inflated
+# per-90 rates can't compress everyone else's scores.
+ratings = _rating_table(players[players["Minutes"].fillna(0).ge(minimum_minutes)])
+if ratings.empty:
+    st.info("No players in this fixture meet the minimum minutes.")
+    st.stop()
 
 max_rows = max(len(ratings), 1)
 if max_rows <= 5:
@@ -681,8 +668,6 @@ else:
     top_n = control_cols[4].slider("Players Shown", 5, min(30, max_rows), min(16, max_rows))
 
 ranked = ratings.copy()
-if "Minutes" in ranked:
-    ranked = ranked[pd.to_numeric(ranked["Minutes"], errors="coerce").fillna(0).ge(minimum_minutes)].copy()
 if ranking_scope in {"By Team", "By Team + Position Group"} and selected_team:
     ranked = ranked[ranked["Team"].astype(str) == str(selected_team)].copy()
 if ranking_scope in {"By Position Group", "By Team + Position Group"} and selected_position:

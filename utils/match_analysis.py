@@ -18,8 +18,8 @@ ACTION_SOURCE = (
     "including timestamps, players, action labels, outcomes and adjusted coordinates."
 )
 PLAYER_PROXY_SOURCE = (
-    "Player proxy views use CAFC_DB Impect player-iteration KPI facts for the selected fixture teams. "
-    "These are player iteration averages, not official single-match ratings."
+    "Player proxy views use CAFC_DB Impect match-level player KPI facts for the selected fixture, "
+    "rebuilt from raw events where those facts have not loaded yet. These are not official match ratings."
 )
 
 RED = ui.CHARLTON_RED
@@ -732,61 +732,6 @@ def action_rate_table(matches: pd.DataFrame, season: str | None, keywords: list[
         return out
     out["Actions"] = out["Actions"].fillna(0)
     return out.sort_values("Actions", ascending=False)
-
-
-def player_rows_for_match(match_row: pd.Series, season: str | None = None) -> pd.DataFrame:
-    try:
-        players = data.load_players(season=season).copy().reset_index(drop=True)
-    except Exception as exc:
-        st.warning(f"Could not load player metrics: {exc}")
-        return pd.DataFrame()
-    teams = fixture_teams(match_row)
-    if "Team" not in players or not teams:
-        return pd.DataFrame()
-    players = players[players["Team"].astype(str).isin(teams)].copy()
-    if players.empty:
-        return players
-    if "Position" in players:
-        players["_Position Display"] = players["Position"].apply(ui.clean_position)
-    else:
-        players["_Position Display"] = "Unknown position"
-    for metric in data.PLAYER_METRICS:
-        if metric in players:
-            players[metric] = pd.to_numeric(players[metric], errors="coerce")
-    if "Minutes" in players:
-        players["Minutes"] = pd.to_numeric(players["Minutes"], errors="coerce")
-    return players
-
-
-def _percentile(series: pd.Series, higher_is_better: bool = True) -> pd.Series:
-    values = pd.to_numeric(series, errors="coerce")
-    return (values.rank(pct=True, ascending=higher_is_better) * 100).round(1)
-
-
-def player_rating_table(players: pd.DataFrame) -> pd.DataFrame:
-    if players.empty:
-        return pd.DataFrame()
-    out = players.copy()
-    weights = {
-        "Goals /90": 0.22,
-        "Assists /90": 0.18,
-        "Bypassed Opponents /90": 0.24,
-        "Pass %": 0.14,
-        "Passes to Final 3rd /90": 0.22,
-    }
-    components = []
-    applied_weight = 0.0
-    for metric, weight in weights.items():
-        if metric in out:
-            col = f"{metric} Percentile"
-            out[col] = _percentile(out[metric])
-            components.append(out[col] * weight)
-            applied_weight += weight
-    if components and applied_weight:
-        out["Rating Proxy"] = (sum(components) / applied_weight).round(1)
-    else:
-        out["Rating Proxy"] = np.nan
-    return out.sort_values("Rating Proxy", ascending=False)
 
 
 def player_scatter(players: pd.DataFrame, x: str, y: str, size: str | None, title: str) -> go.Figure:

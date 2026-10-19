@@ -1278,28 +1278,19 @@ def _compute_team_kpis_from_events(
     return pd.DataFrame(long_rows) if long_rows else None
 
 
-def _compute_player_kpis_from_events(
-    contexts: pd.DataFrame, iteration_ids: list[int]
+def _event_player_match_totals(
+    iteration_ids: list[int], match_id: object | None = None
 ) -> pd.DataFrame | None:
-    """Aggregate per-player season KPI totals from the raw EVENTS table.
+    """Per-match player KPI totals and estimated time on pitch from raw EVENTS.
 
-    Returns a DataFrame with columns matching the ``impect_iteration_player_kpis``
-    schema: ``IterationId``, ``TeamId``, ``PlayerId``, ``Position``,
-    ``Play Duration Seconds``, ``Match Share``, ``KpiId``, ``KpiValue``.
-    Returns ``None`` if no iteration has event data.
-
-    Per-90 rates need each player's *actual* on-pitch time, not an assumed
-    flat 90 minutes for every match they touched the ball in — assuming a
-    full match badly distorts rates for anyone substituted on or off (a
-    2-minute cameo with one progressive pass previously showed the same
-    "per 90" value as a full 90-minute performance, understating true rates
-    for short appearances by up to ~50x). Time on pitch is estimated per
-    match from the span between a player's first and last involvement,
-    normalising CAFC_DB's +10000-second-per-half offset in GAME_TIME_IN_SEC
-    the same way ``_event_elapsed_minutes`` does, so the half-time gap isn't
-    counted as playing time.
+    One row per (IterationId, TeamId, MatchId, PlayerId, Position) with a
+    ``_DurationSeconds`` estimate and a ``kpi_<id>`` total for each
+    ``_EVENT_KPI_PLAYER_MAPPING`` KPI. ``match_id`` limits the scan to one
+    fixture. Returns ``None`` if no event rows match.
     """
     conn = get_connection()
+    match_params = [] if match_id is None else [match_id]
+    match_filter = "" if match_id is None else "AND MATCH_ID = ?"
     placeholders = ", ".join(["?"] * len(iteration_ids))
     event_kpi_mappings = _EVENT_KPI_PLAYER_MAPPING
     kpi_cols = [f"kpi_{kpi_id}" for kpi_id in event_kpi_mappings]
@@ -1337,11 +1328,12 @@ def _compute_player_kpis_from_events(
             {columns}
         FROM {relation("impect_events")} e
         WHERE e.ITERATION_ID IN ({placeholders})
+          {match_filter.replace("MATCH_ID", "e.MATCH_ID")}
           AND e.SQUAD_ID IS NOT NULL
           AND e.PLAYER_ID IS NOT NULL
         GROUP BY e.ITERATION_ID, e.SQUAD_ID, e.MATCH_ID, e.PLAYER_ID, e.PLAYER_POSITION, e.PERIOD_ID
     """
-    raw = conn.query(sql, params=_snowflake_params(iteration_ids), ttl="1h")
+    raw = conn.query(sql, params=_snowflake_params([*iteration_ids, *match_params]), ttl="1h")
     if raw.empty:
         return None
 
@@ -1360,6 +1352,7 @@ def _compute_player_kpis_from_events(
                 MAX_BY(PLAYER_POSITION, GAME_TIME_IN_SEC) AS "Position"
             FROM {relation("impect_events")}
             WHERE ITERATION_ID IN ({placeholders})
+              {match_filter}
               AND PLAYER_ID IS NOT NULL
             GROUP BY ITERATION_ID, MATCH_ID, PERIOD_ID, PLAYER_ID
         ), losses AS (
@@ -1375,6 +1368,7 @@ def _compute_player_kpis_from_events(
             FROM {relation("impect_events")} e,
                  LATERAL FLATTEN(INPUT => e.EVENT_KPIS) item
             WHERE e.ITERATION_ID IN ({placeholders})
+              {match_filter.replace("MATCH_ID", "e.MATCH_ID")}
               AND item.INDEX > 0
             GROUP BY e.ITERATION_ID, e.MATCH_ID, e.PERIOD_ID,
                      TRY_TO_NUMBER(item.VALUE:"playerId"::STRING)
@@ -1387,7 +1381,7 @@ def _compute_player_kpis_from_events(
          AND player_context."PeriodId" = losses."PeriodId"
          AND player_context."PlayerId" = losses."PlayerId"
         """,
-        params=_snowflake_params([*iteration_ids, *iteration_ids]),
+        params=_snowflake_params([*iteration_ids, *match_params, *iteration_ids, *match_params]),
         ttl="1h",
     )
     if not duel_losses.empty:
@@ -1441,6 +1435,35 @@ def _compute_player_kpis_from_events(
     # Floor at one minute so a single late touch doesn't produce a runaway
     # per-90 rate from a near-zero denominator.
     per_match["_DurationSeconds"] = per_match["_DurationSeconds"].clip(lower=60)
+    return per_match
+
+
+def _compute_player_kpis_from_events(
+    contexts: pd.DataFrame, iteration_ids: list[int]
+) -> pd.DataFrame | None:
+    """Aggregate per-player season KPI totals from the raw EVENTS table.
+
+    Returns a DataFrame with columns matching the ``impect_iteration_player_kpis``
+    schema: ``IterationId``, ``TeamId``, ``PlayerId``, ``Position``,
+    ``Play Duration Seconds``, ``Match Share``, ``KpiId``, ``KpiValue``.
+    Returns ``None`` if no iteration has event data.
+
+    Per-90 rates need each player's *actual* on-pitch time, not an assumed
+    flat 90 minutes for every match they touched the ball in — assuming a
+    full match badly distorts rates for anyone substituted on or off (a
+    2-minute cameo with one progressive pass previously showed the same
+    "per 90" value as a full 90-minute performance, understating true rates
+    for short appearances by up to ~50x). Time on pitch is estimated per
+    match from the span between a player's first and last involvement,
+    normalising CAFC_DB's +10000-second-per-half offset in GAME_TIME_IN_SEC
+    the same way ``_event_elapsed_minutes`` does, so the half-time gap isn't
+    counted as playing time.
+    """
+    per_match = _event_player_match_totals(iteration_ids)
+    if per_match is None:
+        return None
+    event_kpi_mappings = _EVENT_KPI_PLAYER_MAPPING
+    kpi_cols = [f"kpi_{kpi_id}" for kpi_id in event_kpi_mappings]
 
     position_keys = ["IterationId", "TeamId", "PlayerId", "Position"]
     season = (
@@ -3464,6 +3487,112 @@ def load_match_player_minutes(
     return _clean_match_player_minutes(rows)
 
 
+def load_match_player_ratings_input(season: str | None, match_id: object) -> pd.DataFrame:
+    """Per-90 rates from one fixture for every player who featured in it.
+
+    Impect's match-level player KPI facts are match totals per position stint,
+    so they are summed per player and scaled by that player's time on pitch in
+    the fixture. Seasons whose match facts haven't been loaded yet (e.g. 26/27)
+    are rebuilt from the fixture's raw events instead. Columns follow
+    load_players(), so season and match rows can be scored the same way.
+    """
+    if USE_MOCK_DATA:
+        return _mock_match_player_ratings_input(season, match_id)
+    contexts, filter_sql, iteration_ids = _match_fact_context(season)
+    if not iteration_ids or match_id is None:
+        return pd.DataFrame(columns=PLAYER_COLUMNS)
+
+    kpi_ids = sorted(set(PLAYER_KPI_IDS.values()))
+    long_values = get_connection().query(
+        f"""
+        SELECT
+            ITERATION_ID AS "IterationId",
+            IMPECT_SQUAD_ID AS "TeamId",
+            IMPECT_PLAYER_ID AS "PlayerId",
+            POSITION_CODE AS "Position",
+            PLAY_DURATION_SECONDS AS "Play Duration Seconds",
+            IMPECT_KPI_ID AS "KpiId",
+            KPI_VALUE AS "KpiValue"
+        FROM {relation("impect_match_player_kpis")}
+        WHERE {filter_sql}
+          AND IMPECT_MATCH_ID = ?
+          AND IMPECT_KPI_ID IN ({", ".join(["?"] * len(kpi_ids))})
+        """,
+        params=_snowflake_params([*iteration_ids, match_id, *kpi_ids]),
+        ttl="30m",
+    )
+    stint_keys = ["IterationId", "TeamId", "PlayerId", "Position"]
+    if not long_values.empty:
+        stints = (
+            long_values.groupby(stint_keys, dropna=False, observed=True)
+            .agg(**{"Play Duration Seconds": ("Play Duration Seconds", "max")})
+            .reset_index()
+            .merge(_pivot_long_kpis(long_values, stint_keys, "KpiId", "KpiValue"), on=stint_keys, how="left")
+        )
+        # Facts only store non-zero values, so a KPI nobody recorded in this
+        # fixture (e.g. goals conceded in a 0-0) is zero rather than unknown.
+        for kpi_id in kpi_ids:
+            if kpi_id not in stints:
+                stints[kpi_id] = np.nan
+    else:
+        stints = _event_player_match_totals(iteration_ids, match_id)
+        if stints is None:
+            return pd.DataFrame(columns=PLAYER_COLUMNS)
+        stints = stints.drop(columns="MatchId").rename(
+            columns={
+                "_DurationSeconds": "Play Duration Seconds",
+                **{f"kpi_{kpi_id}": kpi_id for kpi_id in _EVENT_KPI_PLAYER_MAPPING},
+            }
+        )
+    stints["Play Duration Seconds"] = pd.to_numeric(stints["Play Duration Seconds"], errors="coerce").fillna(0)
+
+    player_keys = ["IterationId", "TeamId", "PlayerId"]
+    players = (
+        stints.groupby(player_keys, dropna=False, observed=True)
+        .agg(**{"Play Duration Seconds": ("Play Duration Seconds", "sum")})
+        .reset_index()
+        .merge(positions.dominant_positions(stints, player_keys), on=player_keys, how="left")
+    )
+    groupers = [stints[column] for column in player_keys]
+    is_goalkeeper_stint = stints["Position"].astype(str).str.upper().eq("GOALKEEPER")
+    for output_column, kpi_id in PLAYER_KPI_IDS.items():
+        if kpi_id not in stints:
+            players[output_column] = np.nan
+            continue
+        # As in load_players(): a missing KPI row means zero, except that
+        # goalkeeping-only KPIs don't apply to an outfield stint.
+        metric = pd.to_numeric(stints[kpi_id], errors="coerce")
+        if kpi_id in _GOALKEEPING_ONLY_KPI_IDS:
+            metric = metric.where(~(is_goalkeeper_stint & metric.isna()), 0.0)
+        else:
+            metric = metric.fillna(0.0)
+        totals = metric.groupby(groupers, dropna=False).sum(min_count=1).rename(output_column).reset_index()
+        players = players.merge(totals, on=player_keys, how="left")
+    duration = pd.to_numeric(players["Play Duration Seconds"], errors="coerce").replace(0, np.nan)
+    for output_column in PLAYER_KPI_IDS:
+        players[output_column] = pd.to_numeric(players[output_column], errors="coerce") / duration * 5400.0
+
+    _, squads, player_dimensions = _match_dimensions(contexts)
+    players = (
+        players.merge(squads, on=["IterationId", "TeamId"], how="left")
+        .merge(player_dimensions, on=["IterationId", "PlayerId"], how="left")
+        .merge(contexts, on="IterationId", how="left")
+    )
+    players["Player"] = _clean_optional_text(players["Player"])
+    unresolved_ids = players.loc[players["Player"].isna(), "PlayerId"].drop_duplicates().tolist()
+    if unresolved_ids:
+        fallback_names = _load_player_name_dimensions(unresolved_ids, iteration_ids).set_index("PlayerId")["Player"]
+        players["Player"] = players["Player"].fillna(players["PlayerId"].map(fallback_names))
+
+    players["Minutes"] = players["Play Duration Seconds"] / 60
+    players["Successful Passes /90"] = players["_successful_passes"]
+    players["Passes to Final 3rd /90"] = players["_successful_passes_to_final_third"] + players[
+        "_unsuccessful_passes_to_final_third"
+    ]
+    players = players.drop(columns=["Play Duration Seconds", "TeamId", "IterationId"], errors="ignore")
+    return _add_player_profile_metrics(players)
+
+
 def _legacy_load_match_events(
     season: str | None = None,
     match_id: object | None = None,
@@ -5276,6 +5405,17 @@ def _mock_teams() -> pd.DataFrame:
         else:
             df[metric] = rng.uniform(0, 5, size=len(teams)).round(2)
     return df
+
+
+@st.cache_data
+def _mock_match_player_ratings_input(season: str | None, match_id: object) -> pd.DataFrame:
+    matches = load_matches(season)
+    fixture = matches[matches["MatchId"].astype(str).eq(str(match_id))]
+    teams = set(fixture[["Home", "Away"]].iloc[0].astype(str)) if not fixture.empty else set()
+    players = _mock_players()
+    players = players[players["Team"].astype(str).isin(teams)].copy()
+    players["Minutes"] = 90.0
+    return players
 
 
 @st.cache_data
