@@ -163,13 +163,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-available_seasons = data.list_seasons().get("matches", [])
-event_seasons = [season for season in available_seasons if str(season).replace("2025", "25") == "25/26"]
+event_seasons = data.list_seasons().get("matches", [])
 if not event_seasons:
     st.warning("No event-level season is available for this report.")
     st.stop()
 
-season = st.selectbox("Match Season", event_seasons, key="set_piece_review_season")
+preferred_season = data.preferred_season(event_seasons)
+season = st.selectbox(
+    "Match Season",
+    event_seasons,
+    index=event_seasons.index(preferred_season),
+    key="set_piece_review_season",
+)
 matches = ma.load_matches(season)
 if matches.empty:
     st.warning("No match data is available for this season.")
