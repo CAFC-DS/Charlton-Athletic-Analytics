@@ -957,6 +957,33 @@ def _opta_team_fixtures(fixtures: pd.DataFrame, team_name: str) -> pd.DataFrame:
     return rows.reset_index(drop=True)
 
 
+def _opta_next_fixture(team_fixtures: pd.DataFrame, team_name: str, competition: str) -> pd.Series | None:
+    """First unplayed Opta fixture for the team.
+
+    Impect matches only exist once event data has arrived, so upcoming
+    fixtures have to come from the Opta schedule.
+    """
+    if team_fixtures.empty or "Date" not in team_fixtures:
+        return None
+    dates = pd.to_datetime(team_fixtures["Date"], errors="coerce", utc=True)
+    unplayed = team_fixtures["Home Goals"].isna() | team_fixtures["Away Goals"].isna()
+    upcoming = team_fixtures[dates.gt(pd.Timestamp.now(tz="UTC")) & unplayed]
+    if upcoming.empty:
+        return None
+    fixture = upcoming.iloc[0]
+    is_home = _normalise_name(fixture.get("Home", "")) == _normalise_name(team_name)
+    return pd.Series(
+        {
+            "Opponent": fixture.get("Away") if is_home else fixture.get("Home"),
+            "Date": fixture.get("Date"),
+            "Competition": competition,
+            "Venue": "Home" if is_home else "Away",
+            "Goals For": np.nan,
+            "Goals Against": np.nan,
+        }
+    )
+
+
 def _opta_fixture_label(row: pd.Series) -> str:
     date_value = pd.to_datetime(row.get("Date"), errors="coerce")
     date_text = date_value.strftime("%d %b %Y") if pd.notna(date_value) else "Undated"
@@ -1259,6 +1286,16 @@ league_position = f"#{int(table_row.iloc[0]['#'])} in table" if not table_row.em
 record = _record(team_matches)
 previous_match, next_match = _fixture_split(team_matches)
 competition = _competition(matches, team_matches)
+try:
+    opta_fixtures = data.load_opta_fixtures(match_season)
+    opta_fixture_error = None
+except Exception as exc:
+    opta_fixtures = pd.DataFrame()
+    opta_fixture_error = exc
+opta_team_fixtures = _opta_team_fixtures(opta_fixtures, team_name)
+opta_next_match = _opta_next_fixture(opta_team_fixtures, team_name, competition)
+if opta_next_match is not None:
+    next_match = opta_next_match
 strengths = _performance_strengths(performance, team_name)
 
 _render_hero(team_name, "match-derived", match_season, competition, league_position, record, strengths, team_matches)
@@ -1305,13 +1342,10 @@ _section("Fixture detail")
 st.caption(
     "Choose a completed Opta fixture to compare effective-play possession and inspect the two submitted starting lineups."
 )
-try:
-    opta_fixtures = data.load_opta_fixtures(match_season)
-except Exception as exc:
-    st.warning(f"Opta fixtures could not be loaded: {exc}")
-    opta_fixtures = pd.DataFrame()
+if opta_fixture_error is not None:
+    st.warning(f"Opta fixtures could not be loaded: {opta_fixture_error}")
 
-opta_team_matches = _completed_fixture_rows(_opta_team_fixtures(opta_fixtures, team_name))
+opta_team_matches = _completed_fixture_rows(opta_team_fixtures)
 if opta_team_matches.empty:
     st.info("No completed Opta fixtures match this team and season, so fixture detail is unavailable.")
 else:
