@@ -25,7 +25,7 @@ PLAYER_PROXY_SOURCE = (
 RED = ui.CHARLTON_RED
 BLUE = ui.CHARLTON_DEEP_RED
 DARK = ui.CHARLTON_BLACK
-GREY = "#7a7f87"
+GREY = "#747A85"
 LIGHT_GREY = ui.CHARLTON_BORDER
 GOLD = "#c69214"
 
@@ -40,98 +40,16 @@ def _inject_match_css() -> None:
     st.markdown(
         """
         <style>
-        .ma-hero {
-            background:
-                radial-gradient(circle at 91% 12%, rgba(255, 255, 255, 0.16), transparent 18%),
-                linear-gradient(135deg, #111111 0%, #241113 48%, #9c0214 130%);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 8px;
-            padding: 30px 34px;
-            margin: 4px 0 20px;
-            box-shadow: 0 14px 36px rgba(16, 24, 40, 0.10);
-            color: #ffffff;
-            overflow: hidden;
-            position: relative;
-        }
 
-        .ma-hero::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-top: 5px solid #c30017;
-            pointer-events: none;
-        }
 
-        .ma-hero-inner {
-            align-items: center;
-            display: flex;
-            gap: 26px;
-            justify-content: space-between;
-            position: relative;
-            z-index: 1;
-        }
 
-        .ma-hero-copy {
-            min-width: 0;
-        }
 
-        .ma-eyebrow {
-            color: #ffffff;
-            font-size: 0.76rem;
-            font-weight: 800;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
 
-        .ma-title {
-            color: #ffffff;
-            font-size: clamp(2rem, 3vw, 2.8rem);
-            line-height: 1.05;
-            margin: 0 0 12px;
-            font-weight: 850;
-        }
 
-        .ma-caption {
-            color: rgba(255, 255, 255, 0.80);
-            max-width: 900px;
-            line-height: 1.55;
-            font-size: 1rem;
-            margin: 0 0 14px;
-        }
 
-        .ma-source {
-            background: rgba(255, 255, 255, 0.10);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 8px;
-            color: rgba(255, 255, 255, 0.86);
-            padding: 10px 12px;
-            margin-top: 10px;
-            font-size: 0.9rem;
-        }
 
-        .ma-limitation {
-            color: #ffecd5;
-            background: rgba(251, 146, 60, 0.14);
-            border-color: rgba(251, 146, 60, 0.34);
-        }
 
-        .ma-badge {
-            flex: 0 0 auto;
-            width: clamp(76px, 10vw, 120px);
-            height: clamp(76px, 10vw, 120px);
-            object-fit: contain;
-            filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.35));
-        }
 
-        .ma-section {
-            margin: 28px 0 12px;
-            color: #667085;
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
 
         .ma-card-grid {
             display: grid;
@@ -141,49 +59,33 @@ def _inject_match_css() -> None:
         }
 
         .ma-card {
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
-            background: #ffffff;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            background: var(--ss-panel);
             padding: 16px 18px;
             min-height: 120px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            border-top: 3px solid #c30017;
+            box-shadow: var(--ss-shadow);
         }
 
         .ma-card-icon {
-            color: #c30017;
+            color: #D4021D;
             font-weight: 850;
             margin-bottom: 10px;
         }
 
         .ma-card-title {
-            color: #172033;
+            color: #16181D;
             font-size: 1rem;
             font-weight: 800;
             margin-bottom: 6px;
         }
 
         .ma-card-body {
-            color: #667085;
+            color: #747A85;
             font-size: 0.9rem;
             line-height: 1.45;
         }
 
-        @media (max-width: 760px) {
-            .ma-hero-inner {
-                align-items: flex-start;
-                flex-direction: column-reverse;
-            }
-
-            .ma-hero {
-                padding: 26px 22px;
-            }
-
-            .ma-badge {
-                width: 78px;
-                height: 78px;
-            }
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -191,33 +93,13 @@ def _inject_match_css() -> None:
 
 
 def page_header(title: str, caption: str, basis: str = MATCH_SOURCE, limitation: str | None = None, visualisation_note: bool = True) -> None:
-    ui.apply_statsearch_theme()
+    # visualisation_note is kept for existing callers; the tip now sits in "About this data".
     _inject_match_css()
-    badge = ui.badge_html("ma-badge", "Charlton Athletic crest")
-    limitation_html = ""
-    if limitation:
-        limitation_html = f'<div class="ma-source ma-limitation"><strong>Limitation:</strong> {ui.esc(limitation)}</div>'
-    html = (
-        '<div class="ma-hero">'
-        '<div class="ma-hero-inner">'
-        '<div class="ma-hero-copy">'
-        '<div class="ma-eyebrow">Charlton Match Analysis</div>'
-        f'<h1 class="ma-title">{ui.esc(title)}</h1>'
-        f'<p class="ma-caption">{ui.esc(caption)}</p>'
-        f'<div class="ma-source"><strong>Data basis:</strong> {ui.esc(basis)}</div>'
-        f"{limitation_html}"
-        "</div>"
-        f"{badge}"
-        "</div>"
-        "</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-    if visualisation_note:
-        ui.visualisation_fullscreen_note()
+    ui.page_header(title, caption, eyebrow="Match analysis", basis=basis, limitation=limitation)
 
 
 def section_heading(label: str) -> None:
-    st.markdown(f'<div class="ma-section">{ui.esc(label)}</div>', unsafe_allow_html=True)
+    ui.section_heading(label)
 
 
 def analysis_card_grid(cards: list[dict[str, str]]) -> None:
@@ -312,6 +194,34 @@ def match_selector(matches: pd.DataFrame, key: str, label: str = "Match") -> pd.
     if "MatchId" in row and pd.notna(row["MatchId"]):
         st.session_state["selected_match_id"] = str(row["MatchId"])
     return row
+
+
+def fixture_bar(
+    season_key: str,
+    match_key: str,
+    team_key: str | None = None,
+    team_label: str = "Team context",
+) -> tuple[str | None, pd.DataFrame, pd.Series, str | None]:
+    """Season, match and (optionally) team selectors on one sticky row.
+
+    Returns ``(season, matches, match_row, team_name)``; ``team_name`` is None
+    without a ``team_key``. Stops the page when the season has no matches.
+    """
+    with ui.filter_bar():
+        columns = st.columns([1, 3, 1.6] if team_key else [1, 4])
+        with columns[0]:
+            season = select_match_season(key=season_key)
+        matches = load_matches(season)
+        if matches.empty:
+            st.warning("No match data is available for this season.")
+            st.stop()
+        with columns[1]:
+            match_row = match_selector(matches, key=match_key)
+        team_name = None
+        if team_key:
+            with columns[2]:
+                team_name = team_selector_for_match(match_row, key=team_key, label=team_label)
+    return season, matches, match_row, team_name
 
 
 def fixture_teams(row: pd.Series) -> list[str]:
@@ -553,7 +463,7 @@ def momentum_chart(team_matches: pd.DataFrame, title: str) -> go.Figure:
             hovertemplate="<b>Gameweek %{x:.0f}</b><br>Cumulative goal difference: %{y:+.0f}<extra></extra>",
         )
     )
-    fig.add_hline(y=0, line=dict(color="#98a2b3", width=1.2), layer="below")
+    fig.add_hline(y=0, line=dict(color="#9A9EA6", width=1.2), layer="below")
     fig.update_layout(
         height=540,
         bargap=0.34,
@@ -679,7 +589,7 @@ def action_stack(actions: pd.DataFrame, keywords: list[str], title: str) -> go.F
         x="Team Label",
         y="Actions",
         color="Action Label",
-        color_discrete_sequence=[RED, DARK, GREY, BLUE, GOLD, "#b42318", "#475467"],
+        color_discrete_sequence=[RED, DARK, GREY, BLUE, GOLD, "#b42318", "#4A4F59"],
         custom_data=["Team", "Action"],
     )
     fig.update_traces(hovertemplate="%{customdata[0]}<br>%{customdata[1]}: %{y:,.0f}<extra></extra>")
@@ -703,7 +613,7 @@ def action_donut(breakdown: pd.DataFrame, title: str) -> go.Figure:
             labels=plot_df["_Label"],
             values=plot_df["Actions"],
             hole=0.58,
-            marker=dict(colors=[RED, BLUE, DARK, GREY, GOLD, "#b42318", "#475467"]),
+            marker=dict(colors=[RED, BLUE, DARK, GREY, GOLD, "#b42318", "#4A4F59"]),
             textinfo="percent",
             textposition="inside",
             customdata=np.stack([plot_df["Action"], plot_df["Actions"]], axis=-1),

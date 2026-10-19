@@ -17,7 +17,7 @@ PLAYER_SOURCE = (
 RED = ui.CHARLTON_RED
 BLUE = ui.CHARLTON_DEEP_RED
 DARK = ui.CHARLTON_BLACK
-GREY = "#7a7f87"
+GREY = "#747A85"
 LIGHT_GREY = ui.CHARLTON_BORDER
 GREEN = "#16a34a"
 AMBER = "#f59e0b"
@@ -155,101 +155,19 @@ def _inject_player_css() -> None:
     st.markdown(
         """
         <style>
-        .pa-hero {
-            background:
-                radial-gradient(circle at 91% 12%, rgba(255, 255, 255, 0.16), transparent 18%),
-                linear-gradient(135deg, #111111 0%, #241113 48%, #9c0214 130%);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 8px;
-            padding: 30px 34px;
-            margin: 4px 0 20px;
-            box-shadow: 0 14px 36px rgba(16, 24, 40, 0.10);
-            color: #ffffff;
-            overflow: hidden;
-            position: relative;
-        }
 
-        .pa-hero::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-top: 5px solid #c30017;
-            pointer-events: none;
-        }
 
-        .pa-hero-inner {
-            align-items: center;
-            display: flex;
-            gap: 26px;
-            justify-content: space-between;
-            position: relative;
-            z-index: 1;
-        }
 
-        .pa-hero-copy {
-            min-width: 0;
-        }
 
-        .pa-eyebrow {
-            color: #ffffff;
-            font-size: 0.76rem;
-            font-weight: 800;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
 
-        .pa-title {
-            color: #ffffff;
-            font-size: clamp(2rem, 3vw, 2.8rem);
-            line-height: 1.05;
-            margin: 0 0 12px;
-            font-weight: 850;
-        }
 
-        .pa-caption {
-            color: rgba(255, 255, 255, 0.80);
-            max-width: 900px;
-            line-height: 1.55;
-            font-size: 1rem;
-            margin: 0 0 14px;
-        }
 
-        .pa-source {
-            background: rgba(255, 255, 255, 0.10);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 8px;
-            color: rgba(255, 255, 255, 0.86);
-            padding: 10px 12px;
-            margin-top: 10px;
-            font-size: 0.9rem;
-        }
 
-        .pa-limitation {
-            color: #ffecd5;
-            background: rgba(251, 146, 60, 0.14);
-            border-color: rgba(251, 146, 60, 0.34);
-        }
 
-        .pa-badge {
-            flex: 0 0 auto;
-            width: clamp(76px, 10vw, 120px);
-            height: clamp(76px, 10vw, 120px);
-            object-fit: contain;
-            filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.35));
-        }
 
-        .pa-section {
-            margin: 28px 0 12px;
-            color: #667085;
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
 
         .pa-chart-title {
-            color: #172033;
+            color: #16181D;
             font-size: clamp(1.35rem, 2vw, 1.75rem);
             font-weight: 850;
             line-height: 1.2;
@@ -264,49 +182,33 @@ def _inject_player_css() -> None:
         }
 
         .pa-card {
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
-            background: #ffffff;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            background: var(--ss-panel);
             padding: 16px 18px;
             min-height: 120px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            border-top: 3px solid #c30017;
+            box-shadow: var(--ss-shadow);
         }
 
         .pa-card-icon {
-            color: #c30017;
+            color: #D4021D;
             font-weight: 850;
             margin-bottom: 10px;
         }
 
         .pa-card-title {
-            color: #172033;
+            color: #16181D;
             font-size: 1rem;
             font-weight: 800;
             margin-bottom: 6px;
         }
 
         .pa-card-body {
-            color: #667085;
+            color: #747A85;
             font-size: 0.9rem;
             line-height: 1.45;
         }
 
-        @media (max-width: 760px) {
-            .pa-hero-inner {
-                align-items: flex-start;
-                flex-direction: column-reverse;
-            }
-
-            .pa-hero {
-                padding: 26px 22px;
-            }
-
-            .pa-badge {
-                width: 78px;
-                height: 78px;
-            }
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -314,33 +216,13 @@ def _inject_player_css() -> None:
 
 
 def page_header(title: str, caption: str, basis: str = PLAYER_SOURCE, limitation: str | None = None, visualisation_note: bool = True) -> None:
-    ui.apply_statsearch_theme()
+    # visualisation_note is kept for existing callers; the tip now sits in "About this data".
     _inject_player_css()
-    badge = ui.badge_html("pa-badge", "Charlton Athletic crest")
-    limitation_html = ""
-    if limitation:
-        limitation_html = f'<div class="pa-source pa-limitation"><strong>Limitation:</strong> {ui.esc(limitation)}</div>'
-    html = (
-        '<div class="pa-hero">'
-        '<div class="pa-hero-inner">'
-        '<div class="pa-hero-copy">'
-        '<div class="pa-eyebrow">Charlton Player Analysis</div>'
-        f'<h1 class="pa-title">{ui.esc(title)}</h1>'
-        f'<p class="pa-caption">{ui.esc(caption)}</p>'
-        f'<div class="pa-source"><strong>Data basis:</strong> {ui.esc(basis)}</div>'
-        f"{limitation_html}"
-        "</div>"
-        f"{badge}"
-        "</div>"
-        "</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-    if visualisation_note:
-        ui.visualisation_fullscreen_note()
+    ui.page_header(title, caption, eyebrow="Player analysis", basis=basis, limitation=limitation)
 
 
 def section_heading(label: str) -> None:
-    st.markdown(f'<div class="pa-section">{ui.esc(label)}</div>', unsafe_allow_html=True)
+    ui.section_heading(label)
 
 
 def chart_title(label: str) -> None:
@@ -714,16 +596,16 @@ def player_profile_radar(metric_rows: pd.DataFrame, player_name: str, role_group
                 range=[0, 100],
                 tickvals=[20, 40, 60, 80],
                 tickfont=dict(size=10, color=GREY),
-                gridcolor="#e9edf3",
-                linecolor="#e9edf3",
+                gridcolor="#E6E1DB",
+                linecolor="#E6E1DB",
                 angle=90,
             ),
             angularaxis=dict(
                 rotation=90,
                 direction="clockwise",
                 tickfont=dict(size=11, color=DARK),
-                gridcolor="#eef2f6",
-                linecolor="#eef2f6",
+                gridcolor="#ECE8E3",
+                linecolor="#ECE8E3",
             ),
         ),
         showlegend=False,
@@ -1015,9 +897,9 @@ def metric_scatter(
         x_median = pd.to_numeric(plot_df[x], errors="coerce").median()
         y_median = pd.to_numeric(plot_df[y], errors="coerce").median()
         if pd.notna(x_median):
-            fig.add_vline(x=x_median, line=dict(color="#98a2b3", width=1.2, dash="dash"), opacity=0.70)
+            fig.add_vline(x=x_median, line=dict(color="#9A9EA6", width=1.2, dash="dash"), opacity=0.70)
         if pd.notna(y_median):
-            fig.add_hline(y=y_median, line=dict(color="#98a2b3", width=1.2, dash="dash"), opacity=0.70)
+            fig.add_hline(y=y_median, line=dict(color="#9A9EA6", width=1.2, dash="dash"), opacity=0.70)
 
     fig.update_traces(
         cliponaxis=False,
@@ -1031,7 +913,7 @@ def metric_scatter(
         height=650,
         showlegend=show_legend,
         margin=dict(l=42, r=72 if color_metric in plot_df.columns else 36, t=78 if show_title else 36, b=68),
-        plot_bgcolor="#f7f8fa",
+        plot_bgcolor="#F8F5F2",
         legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5),
     )
     return fig

@@ -9,11 +9,14 @@ from utils import ui
 
 RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
-GREY = "#7a7f87"
+GREY = "#747A85"
 LIGHT_GREY = ui.CHARLTON_BORDER
-AXIS_TEXT = "#111111"
-AXIS_LINE = "#98a2b3"
-AXIS_FONT_FAMILY = "Inter SemiBold, Arial, sans-serif"
+AXIS_TEXT = ui.AXIS_TEXT
+AXIS_LINE = ui.AXIS_LINE
+AXIS_FONT_FAMILY = ui.AXIS_FONT_FAMILY
+# Series colours for charts that don't set their own: crest red and black
+# first, then the academy dashboard's categorical set.
+COLORWAY = [RED, DARK, "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 
 
 def _bold_axis_title_text(value: object) -> str:
@@ -67,8 +70,10 @@ def metric_digits(metric: str | None) -> int:
     if metric is None:
         return 2
     text = metric.lower()
-    if "percentile" in text:
+    if "percentile" in text or text.startswith("minute"):
         return 0
+    if text == "age":
+        return 1
     if "%" in metric or "rating" in text:
         return 1
     if "goals" in text and "/90" not in metric:
@@ -113,14 +118,27 @@ def format_yaxis(fig: go.Figure, metric: str | None) -> go.Figure:
 
 def polish_figure(fig: go.Figure, title: str | None = None, height: int | None = None) -> go.Figure:
     if title:
-        fig.update_layout(title=dict(text=title, font=dict(size=19, color=DARK), x=0.01, xanchor="left"))
+        fig.update_layout(
+            title=dict(
+                text=title,
+                font=dict(family=ui.DISPLAY_FONT_FAMILY, size=19, color=ui.CHARLTON_CHARCOAL),
+                x=0.01,
+                xanchor="left",
+            )
+        )
 
     fig.update_layout(
         template="plotly_white",
+        # Transparent so the chart sits on its panel (see the theme's stPlotlyChart rule).
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#ffffff",
-        font=dict(family="Inter, Arial, sans-serif", color=DARK, size=13),
-        hoverlabel=dict(bgcolor="#ffffff", bordercolor=LIGHT_GREY, font_size=13, font_color=DARK),
+        plot_bgcolor="rgba(0,0,0,0)",
+        colorway=COLORWAY,
+        font=dict(family=ui.AXIS_FONT_FAMILY, color=ui.CHARLTON_INK_2, size=13),
+        hoverlabel=dict(
+            bgcolor=ui.CHARLTON_CHARCOAL,
+            bordercolor=ui.CHARLTON_CHARCOAL,
+            font=dict(family=ui.AXIS_FONT_FAMILY, size=12.5, color=ui.CHARLTON_SURFACE),
+        ),
         margin=dict(l=28, r=34, t=68 if title else 34, b=54),
         uniformtext=dict(minsize=10, mode="hide"),
         legend=dict(
@@ -137,26 +155,18 @@ def polish_figure(fig: go.Figure, title: str | None = None, height: int | None =
     if height:
         fig.update_layout(height=height)
 
-    fig.update_xaxes(
+    axis_style = dict(
         automargin=True,
-        gridcolor="#eef2f6",
+        gridcolor=ui.CHARLTON_GRID,
         linecolor=AXIS_LINE,
         tickcolor=AXIS_LINE,
         tickfont=dict(size=12, color=AXIS_TEXT, family=AXIS_FONT_FAMILY),
-        title_font=dict(size=14, color=AXIS_TEXT, family=AXIS_FONT_FAMILY),
+        title_font=dict(size=13, color=AXIS_TEXT, family=AXIS_FONT_FAMILY),
         title_standoff=14,
-        zerolinecolor="#e6edf5",
+        zerolinecolor=ui.CHARLTON_BORDER,
     )
-    fig.update_yaxes(
-        automargin=True,
-        gridcolor="#eef2f6",
-        linecolor=AXIS_LINE,
-        tickcolor=AXIS_LINE,
-        tickfont=dict(size=12, color=AXIS_TEXT, family=AXIS_FONT_FAMILY),
-        title_font=dict(size=14, color=AXIS_TEXT, family=AXIS_FONT_FAMILY),
-        title_standoff=14,
-        zerolinecolor="#e6edf5",
-    )
+    fig.update_xaxes(**axis_style)
+    fig.update_yaxes(**axis_style)
     _bold_axis_titles(fig)
     return fig
 

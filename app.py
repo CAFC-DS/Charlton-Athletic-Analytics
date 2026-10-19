@@ -73,28 +73,35 @@ def require_cafc_login() -> None:
             padding: 30px 28px 20px;
             text-align: center;
             color: #ffffff;
-            border-top: 6px solid #c30017;
-            border-radius: 14px 14px 0 0;
-            background: linear-gradient(135deg, #111111 0%, #4b1118 58%, #9c0214 145%);
-            box-shadow: 0 14px 34px rgba(16, 24, 40, 0.18);
+            border-bottom: 6px solid #111111;
+            border-radius: 16px 16px 0 0;
+            background: #D4021D;
+            background-image:
+                repeating-linear-gradient(115deg, rgb(255 255 255 / 6%) 0 2px, transparent 2px 16px),
+                linear-gradient(115deg, transparent 64%, #A00016 64%);
+            box-shadow: 0 1px 2px rgb(20 20 30 / 6%), 0 6px 24px rgb(20 20 30 / 6%);
         }
 
         .cafc-login-badge {
-            width: 92px;
-            height: 92px;
-            object-fit: contain;
-            margin-bottom: 12px;
+            width: 88px;
+            height: 88px;
+            margin-bottom: 14px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgb(255 255 255 / 90%), 0 6px 18px rgb(0 0 0 / 35%);
         }
         .cafc-login-eyebrow {
-            font-size: 0.75rem;
-            font-weight: 800;
-            letter-spacing: 0.12em;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            opacity: 0.85;
         }
 
         .cafc-login-title {
             margin-top: 8px;
-            font-size: 2rem;
-            font-weight: 900;
+            font: 800 44px/0.92 "Archivo", "Arial Narrow", sans-serif;
+            font-stretch: 70%;
+            text-transform: uppercase;
         }
 
         .cafc-login-subtitle {
@@ -103,12 +110,12 @@ def require_cafc_login() -> None:
         }
 
         div[data-testid="stForm"] {
-            border: 1px solid #d8dde6;
+            border: 1px solid #E6E1DB;
             border-top: 0;
-            border-radius: 0 0 14px 14px;
+            border-radius: 0 0 16px 16px;
             padding: 1rem 1.5rem 1.5rem;
-            background: #ffffff;
-            box-shadow: 0 14px 34px rgba(16, 24, 40, 0.10);
+            background: #FFFDFB;
+            box-shadow: 0 1px 2px rgb(20 20 30 / 6%), 0 6px 24px rgb(20 20 30 / 6%);
         }
 
         div[data-testid="stForm"] [data-testid="InputInstructions"] {
@@ -188,11 +195,10 @@ def require_cafc_login() -> None:
 
 require_cafc_login()
 
+# st.navigation draws the page list above any other sidebar content, so the
+# crest goes in the sidebar header via st.logo.
 if ui.BADGE_PATH.exists():
-    st.sidebar.markdown(
-        f'<div class="cafc-sidebar-brand">{ui.badge_html("cafc-sidebar-badge", "Charlton Athletic crest")}</div>',
-        unsafe_allow_html=True,
-    )
+    st.logo(str(ui.BADGE_PATH), size="large")
 
 if st.sidebar.button("Log out", icon=":material/logout:", width="stretch"):
     clear_cafc_auth_session()

@@ -5314,33 +5314,15 @@ def all_datasets() -> dict[str, pd.DataFrame]:
     }
 
 
-def dataset_summary() -> dict:
-    """Numbers for the Home page (season, refresh, counts)."""
-    season_inventory = list_seasons()
-    available_seasons = season_inventory.get("players", [])
-    selected_season = available_seasons[-1] if available_seasons else None
-    players = load_players(selected_season)
-    teams = load_teams(selected_season)
-    matches = load_matches(selected_season)
-
+def last_refreshed() -> object:
+    """When provider events were last loaded into CAFC_DB, for the Home page."""
     if USE_MOCK_DATA:
-        season = "2025/26"
-        last_refreshed = "2026-07-02"
-    else:
-        season = selected_season or "Unknown"
-        refresh = get_connection().query(
-            f"SELECT MAX(LOADED_AT) AS LAST_REFRESHED FROM {relation('impect_events')}",
-            ttl="1h",
-        )
-        last_refreshed = str(refresh["LAST_REFRESHED"].iloc[0])
-
-    return {
-        "season": season,
-        "last_refreshed": last_refreshed,
-        "n_players": len(players),
-        "n_teams": len(teams),
-        "n_matches": len(matches),
-    }
+        return "2026-07-02"
+    refresh = get_connection().query(
+        f"SELECT MAX(LOADED_AT) AS LAST_REFRESHED FROM {relation('impect_events')}",
+        ttl="1h",
+    )
+    return refresh["LAST_REFRESHED"].iloc[0] if not refresh.empty else None
 
 
 # ---- MOCK DATA (development only) --------------------------------------------

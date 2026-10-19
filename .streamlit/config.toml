@@ -1,6 +1,25 @@
 [theme]
-primaryColor = "#c30017"
-backgroundColor = "#f4f5f7"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#151515"
-font = "sans serif"
+# Matches the Charlton Academy Graduates dashboard: warm off-white ground,
+# crest red accents, Inter body text and condensed Archivo headings.
+base = "light"
+primaryColor = "#D4021D"
+backgroundColor = "#F5F3F0"
+secondaryBackgroundColor = "#F8F5F2"
+textColor = "#16181D"
+linkColor = "#D4021D"
+borderColor = "#E6E1DB"
+dataframeBorderColor = "#E6E1DB"
+dataframeHeaderBackgroundColor = "#F8F5F2"
+showWidgetBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..100,600..800&display=swap, sans-serif"
+headingFontWeights = [800, 700, 700, 700, 600, 600]
+
+[theme.sidebar]
+backgroundColor = "#111111"
+secondaryBackgroundColor = "#1C1C1F"
+textColor = "#ECEDEF"
+borderColor = "#2A2A2E"
+primaryColor = "#EE2B3F"

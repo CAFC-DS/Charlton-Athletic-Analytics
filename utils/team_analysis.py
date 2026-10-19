@@ -27,7 +27,7 @@ ACTION_SOURCE = (
 
 RED = ui.CHARLTON_RED
 DARK = ui.CHARLTON_BLACK
-GREY = "#7a7f87"
+GREY = "#747A85"
 LIGHT_GREY = ui.CHARLTON_BORDER
 BLUE = ui.CHARLTON_DEEP_RED
 SOFT_BLUE = "#fff1f3"
@@ -51,98 +51,16 @@ def _inject_team_css() -> None:
     st.markdown(
         """
         <style>
-        .ta-hero {
-            background:
-                radial-gradient(circle at 91% 12%, rgba(255, 255, 255, 0.16), transparent 18%),
-                linear-gradient(135deg, #111111 0%, #241113 48%, #9c0214 130%);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 8px;
-            padding: 30px 34px;
-            margin: 4px 0 20px;
-            box-shadow: 0 14px 36px rgba(16, 24, 40, 0.10);
-            color: #ffffff;
-            overflow: hidden;
-            position: relative;
-        }
 
-        .ta-hero::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-top: 5px solid #c30017;
-            pointer-events: none;
-        }
 
-        .ta-hero-inner {
-            align-items: center;
-            display: flex;
-            gap: 26px;
-            justify-content: space-between;
-            position: relative;
-            z-index: 1;
-        }
 
-        .ta-hero-copy {
-            min-width: 0;
-        }
 
-        .ta-eyebrow {
-            color: #ffffff;
-            font-size: 0.76rem;
-            font-weight: 800;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
 
-        .ta-title {
-            color: #ffffff;
-            font-size: clamp(2rem, 3vw, 2.8rem);
-            line-height: 1.05;
-            margin: 0 0 12px;
-            font-weight: 850;
-        }
 
-        .ta-caption {
-            color: rgba(255, 255, 255, 0.80);
-            max-width: 880px;
-            line-height: 1.55;
-            font-size: 1rem;
-            margin: 0 0 14px;
-        }
 
-        .ta-source {
-            background: rgba(255, 255, 255, 0.10);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 8px;
-            color: rgba(255, 255, 255, 0.86);
-            padding: 10px 12px;
-            margin-top: 10px;
-            font-size: 0.9rem;
-        }
 
-        .ta-limitation {
-            color: #ffecd5;
-            background: rgba(251, 146, 60, 0.14);
-            border-color: rgba(251, 146, 60, 0.34);
-        }
 
-        .ta-badge {
-            flex: 0 0 auto;
-            width: clamp(76px, 10vw, 120px);
-            height: clamp(76px, 10vw, 120px);
-            object-fit: contain;
-            filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.35));
-        }
 
-        .ta-section {
-            margin: 28px 0 12px;
-            color: #667085;
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
 
         .ta-card-grid {
             display: grid;
@@ -152,49 +70,33 @@ def _inject_team_css() -> None:
         }
 
         .ta-card {
-            border: 1px solid #e6edf5;
-            border-radius: 8px;
-            background: #ffffff;
+            border: 1px solid #E6E1DB;
+            border-radius: 14px;
+            background: var(--ss-panel);
             padding: 16px 18px;
             min-height: 120px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-            border-top: 3px solid #c30017;
+            box-shadow: var(--ss-shadow);
         }
 
         .ta-card-icon {
-            color: #c30017;
+            color: #D4021D;
             font-weight: 850;
             margin-bottom: 10px;
         }
 
         .ta-card-title {
-            color: #172033;
+            color: #16181D;
             font-size: 1rem;
             font-weight: 800;
             margin-bottom: 6px;
         }
 
         .ta-card-body {
-            color: #667085;
+            color: #747A85;
             font-size: 0.9rem;
             line-height: 1.45;
         }
 
-        @media (max-width: 760px) {
-            .ta-hero-inner {
-                align-items: flex-start;
-                flex-direction: column-reverse;
-            }
-
-            .ta-hero {
-                padding: 26px 22px;
-            }
-
-            .ta-badge {
-                width: 78px;
-                height: 78px;
-            }
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -202,33 +104,13 @@ def _inject_team_css() -> None:
 
 
 def page_header(title: str, caption: str, basis: str, limitation: str | None = None, visualisation_note: bool = True) -> None:
-    ui.apply_statsearch_theme()
+    # visualisation_note is kept for existing callers; the tip now sits in "About this data".
     _inject_team_css()
-    badge = ui.badge_html("ta-badge", "Charlton Athletic crest")
-    limitation_html = ""
-    if limitation:
-        limitation_html = f'<div class="ta-source ta-limitation"><strong>Limitation:</strong> {ui.esc(limitation)}</div>'
-    html = (
-        '<div class="ta-hero">'
-        '<div class="ta-hero-inner">'
-        '<div class="ta-hero-copy">'
-        '<div class="ta-eyebrow">Charlton Team Analysis</div>'
-        f'<h1 class="ta-title">{ui.esc(title)}</h1>'
-        f'<p class="ta-caption">{ui.esc(caption)}</p>'
-        f'<div class="ta-source"><strong>Data basis:</strong> {ui.esc(basis)}</div>'
-        f"{limitation_html}"
-        "</div>"
-        f"{badge}"
-        "</div>"
-        "</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-    if visualisation_note:
-        ui.visualisation_fullscreen_note()
+    ui.page_header(title, caption, eyebrow="Team analysis", basis=basis, limitation=limitation)
 
 
 def section_heading(label: str) -> None:
-    st.markdown(f'<div class="ta-section">{ui.esc(label)}</div>', unsafe_allow_html=True)
+    ui.section_heading(label)
 
 
 def analysis_card_grid(cards: list[dict[str, str]]) -> None:
@@ -294,6 +176,24 @@ def team_selector(teams: pd.DataFrame, key: str, label: str = "Team") -> str:
     charlton_matches = [index for index, team in enumerate(team_names) if "charlton" in team.lower()]
     default = charlton_matches[0] if charlton_matches else 0
     return st.selectbox(label, team_names, index=default, key=key)
+
+
+def season_team_bar(season_key: str, team_key: str) -> tuple[str | None, pd.DataFrame, str]:
+    """Season and team selectors on one sticky row, over the team style dataset.
+
+    Returns ``(season, teams, team_name)``; stops the page when the season has no teams.
+    """
+    with ui.filter_bar():
+        season_col, team_col = st.columns([0.7, 2])
+        with season_col:
+            season = select_season("players", key=season_key)
+        teams = load_team_style_data(season)
+        if teams.empty:
+            st.warning("No team data is available for this season.")
+            st.stop()
+        with team_col:
+            team_name = team_selector(teams, key=team_key)
+    return season, teams, team_name
 
 
 def regular_season_fixtures(matches: pd.DataFrame) -> pd.DataFrame:
@@ -779,7 +679,7 @@ def momentum_chart(team_matches: pd.DataFrame, title: str) -> go.Figure:
             hovertemplate="<b>Gameweek %{x:.0f}</b><br>Cumulative goal difference: %{y:+.0f}<extra></extra>",
         )
     )
-    fig.add_hline(y=0, line=dict(color="#98a2b3", width=1.2), layer="below")
+    fig.add_hline(y=0, line=dict(color="#9A9EA6", width=1.2), layer="below")
     fig.update_layout(
         height=540,
         bargap=0.34,
