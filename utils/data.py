@@ -3628,14 +3628,24 @@ def load_match_events(
             CASE WHEN ACTION = 'DIRECT_FREE_KICK' THEN 'DIRECT' END AS "Set Piece Execution"
         FROM {relation("impect_events")}
         WHERE {' AND '.join(clauses)}
-        ORDER BY GAME_TIME_IN_SEC, EVENT_INDEX
-        LIMIT {safe_limit}
+        ORDER BY MATCH_ID, GAME_TIME_IN_SEC, EVENT_INDEX
+        LIMIT {safe_limit + 1}
         """,
         params=_snowflake_params(params),
         ttl="30m",
     )
     if events.empty:
         return _empty_match_events()
+    # One row past the cap proves the pull was cut short. Ordering by match
+    # first means only the last match returned is partial, rather than every
+    # match losing its closing minutes.
+    if len(events) > safe_limit:
+        events = events.head(safe_limit)
+        st.warning(
+            f"This selection holds more than {safe_limit:,} events, so only the first "
+            f"{events['MatchId'].nunique() - 1:,} match(es) are complete. "
+            "Narrow the match window for full totals."
+        )
 
     # Build a dimension containing only the actor/receiver ids returned by this
     # event query. Prefer the selected iteration's name, but backfill a missing
@@ -4066,13 +4076,20 @@ def load_set_piece_events(
          AND a.MATCH_ID = e.MATCH_ID
          AND a.SEQUENCE_INDEX = e.SEQUENCE_INDEX
         ORDER BY e.MATCH_ID, e.EVENT_INDEX
-        LIMIT {safe_limit}
+        LIMIT {safe_limit + 1}
         """,
         params=_snowflake_params(params),
         ttl="30m",
     )
     if raw.empty:
         return _empty_set_piece_events()
+    if len(raw) > safe_limit:
+        raw = raw.head(safe_limit)
+        st.warning(
+            f"This selection holds more than {safe_limit:,} set-piece events, so only the first "
+            f"{raw['MatchId'].nunique() - 1:,} match(es) are complete. "
+            "Narrow the match window for full totals."
+        )
 
     matches, squads, players = _match_dimensions(contexts)
     home = squads.rename(columns={"TeamId": "HomeTeamId", "Team": "Home"})

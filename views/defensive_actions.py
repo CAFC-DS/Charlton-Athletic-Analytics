@@ -312,8 +312,6 @@ events = data.load_match_events(
     match_ids=selected_match_ids,
     limit=120000,
 )
-if len(events) >= 120000:
-    st.warning("The selected-window event pull reached its 120,000-row cap, so spatial and sequence visuals may be incomplete.")
 all_regains = da.filter_regain_events(events, "All Regains")
 mapped_regains = da.filter_regain_events(events, map_view)
 

@@ -671,8 +671,6 @@ def _render_leaderboard_tab() -> None:
         return
     with st.spinner("Loading season events for combinations..."):
         season_events = data.load_match_events(season=leaderboard_season, team=team_filter, match_ids=match_ids, limit=120000)
-    if len(season_events) >= 120000:
-        st.warning("The season event pull reached its 120,000-row cap; combination totals may be incomplete.")
     if season_events.empty:
         st.info("No event-level rows are available for this team across the selected window.")
         return

@@ -887,9 +887,6 @@ with st.expander("Final Third Analysis Controls", expanded=True):
         st.info("No CAFC_DB Impect event rows are available for this selected season and team.")
         st.stop()
 
-    if len(raw_events) >= 120000:
-        st.warning("The selected-match event pull reached the 120,000-row cap. Results may be incomplete.")
-
     selected_match_id_set = {str(match_id) for match_id in selected_match_ids}
     events = raw_events[raw_events["MatchId"].astype(str).isin(selected_match_id_set)].copy()
     team_matches = team_matches_all[team_matches_all["MatchId"].astype(str).isin(selected_match_id_set)].copy()

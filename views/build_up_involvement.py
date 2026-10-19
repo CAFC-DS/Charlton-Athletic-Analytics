@@ -242,8 +242,6 @@ st.caption(f"{len(venue_fixtures)} matches · {venue} venue · {window} window."
 
 with st.spinner("Loading build-up sequence events..."):
     events = data.load_match_events(season=season, team=team_name, match_ids=selected_match_ids, limit=120000)
-if len(events) >= 120000:
-    st.warning("The selected-window event pull reached its 120,000-row cap; build-up totals may be incomplete.")
 if events.empty:
     st.info("No event-level rows are available for the selected fixtures.")
     st.stop()

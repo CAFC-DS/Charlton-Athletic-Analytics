@@ -346,8 +346,6 @@ selected_match_ids = venue_fixtures["MatchId"].astype(str).tolist()
 
 with st.spinner("Loading build-up sequence events..."):
     events = data.load_match_events(season=season, team=team_name, match_ids=selected_match_ids, limit=120000)
-if len(events) >= 120000:
-    st.warning("The selected-window event pull reached its 120,000-row cap; totals may be incomplete.")
 if events.empty:
     st.info("No event-level rows are available for the selected fixtures.")
     st.stop()

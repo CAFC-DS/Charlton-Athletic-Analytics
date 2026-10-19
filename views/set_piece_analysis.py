@@ -214,8 +214,6 @@ against_sequences = selected_sequences[selected_sequences["Opponent"].astype(str
 
 if detailed_events.empty:
     st.warning("Sequence totals are available, but detailed event locations are unavailable for the selected window.")
-elif len(detailed_events) >= 120000:
-    st.warning("The detailed pull reached 120,000 rows; pitch maps may not contain every selected restart.")
 
 overview_tab, attack_corner_tab, defend_corner_tab, free_kick_tab, throw_tab = st.tabs(
     ["Overview", "Attacking Corners", "Defending Corners", "Free Kicks", "Throw-Ins"]
