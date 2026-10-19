@@ -4268,6 +4268,63 @@ def _opta_season_labels(values: pd.Series) -> pd.Series:
     )
 
 
+def _opta_fixture_slice(source_key: str) -> str:
+    """One fixture's rows of an Opta relation, for use as a join input.
+
+    The F7 team/roster/lineup views parse every stored XML payload, and
+    Snowflake does not carry the outer ``FIXTURE_ID = ?`` filter across a join
+    into them. Without this slice a single-fixture query parsed every fixture's
+    lineup document (~260 MB, over a minute on a cold warehouse) instead of
+    one (~15 MB). Each slice consumes one fixture-id parameter.
+    """
+    if source_key == "opta_fixtures_raw":
+        return _latest_opta_fixtures_sql("FIXTURE_ID = ?")
+    return f"(SELECT * FROM {relation(source_key)} WHERE FIXTURE_ID = ?)"
+
+
+def _latest_opta_fixtures_sql(where: str = "") -> str:
+    """The Opta fixtures table reduced to its latest snapshot per fixture.
+
+    The raw table is append-only (see _latest_opta_fixture_versions), so
+    joining it directly repeats every event, goal and substitution once per
+    stored snapshot of the fixture.
+    """
+    where_sql = f"WHERE {where}" if where else ""
+    return (
+        f"(SELECT * FROM {relation('opta_fixtures_raw')} {where_sql} "
+        "QUALIFY ROW_NUMBER() OVER (PARTITION BY FIXTURE_ID ORDER BY LOADED_AT DESC) = 1)"
+    )
+
+
+def _opta_season_fixture_slice(source_key: str, season_filter: str) -> str:
+    """Rows of an Opta relation for the fixtures matching ``season_filter``.
+
+    The season-wide counterpart of _opta_fixture_slice: ``season_filter`` is a
+    WHERE clause over the fixtures table aliased ``sf``, and its parameters
+    must be supplied once per slice.
+    """
+    return (
+        f"(SELECT * FROM {relation(source_key)} WHERE FIXTURE_ID IN "
+        f"(SELECT sf.FIXTURE_ID FROM {relation('opta_fixtures_raw')} sf WHERE {season_filter}))"
+    )
+
+
+def _opta_fixture_filter(season: str | None, team: str | None) -> tuple[str, list[object]]:
+    """WHERE clause over the Opta fixtures table (aliased ``sf``) for a season and/or team."""
+    clauses: list[str] = []
+    params: list[object] = []
+    if season:
+        start_year = _season_key(season).split("/")[0]
+        if len(start_year) == 2 and start_year.isdigit():
+            start_year = f"20{start_year}"
+        clauses.append("TO_VARCHAR(sf.SEASON) = ?")
+        params.append(start_year)
+    if team:
+        clauses.append("(sf.HOME_TEAM_NAME = ? OR sf.AWAY_TEAM_NAME = ?)")
+        params.extend([team, team])
+    return " AND ".join(clauses), params
+
+
 def load_opta_events(fixture_id: object | None = None, limit: int = 10000) -> pd.DataFrame:
     """Parsed, real Opta F24 events for one DVMS fixture.
 
@@ -4303,17 +4360,17 @@ def load_opta_events(fixture_id: object | None = None, limit: int = 10000) -> pd
             e.IS_ASSIST AS "Is Assist",
             e.EVENT_AT_UTC AS "Event At UTC"
         FROM {relation("opta_events_staging")} e
-        LEFT JOIN {relation("opta_fixtures_raw")} f
+        LEFT JOIN {_opta_fixture_slice("opta_fixtures_raw")} f
           ON f.FIXTURE_ID = e.FIXTURE_ID
-        LEFT JOIN {relation("opta_teams_staging")} t
+        LEFT JOIN {_opta_fixture_slice("opta_teams_staging")} t
           ON t.FIXTURE_ID = e.FIXTURE_ID AND t.OPTA_TEAM_ID = e.OPTA_TEAM_ID
-        LEFT JOIN {relation("opta_rosters_staging")} r
+        LEFT JOIN {_opta_fixture_slice("opta_rosters_staging")} r
           ON r.FIXTURE_ID = e.FIXTURE_ID AND r.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
         WHERE e.FIXTURE_ID = ?
         ORDER BY e.PERIOD_ID, e.EVENT_MINUTE, e.EVENT_SECOND, e.PROVIDER_EVENT_ROW_ID
         LIMIT {safe_limit}
         """,
-        params=_snowflake_params([fixture_id]),
+        params=_snowflake_params([fixture_id] * 4),
         ttl="30m",
     )
     if events.empty:
@@ -4348,14 +4405,14 @@ def load_opta_lineups(fixture_id: object | None = None) -> pd.DataFrame:
             l.FORMATION_PLACE AS "Formation Place",
             l.IS_CAPTAIN AS "Is Captain"
         FROM {relation("opta_lineups_staging")} l
-        LEFT JOIN {relation("opta_rosters_staging")} r
+        LEFT JOIN {_opta_fixture_slice("opta_rosters_staging")} r
           ON r.FIXTURE_ID = l.FIXTURE_ID AND r.OPTA_PLAYER_ID = l.OPTA_PLAYER_ID
-        LEFT JOIN {relation("opta_teams_staging")} t
+        LEFT JOIN {_opta_fixture_slice("opta_teams_staging")} t
           ON t.FIXTURE_ID = l.FIXTURE_ID AND t.OPTA_TEAM_ID = l.OPTA_TEAM_ID
         WHERE l.FIXTURE_ID = ?
         ORDER BY "Team", "Lineup Status", "Formation Place", "Player"
         """,
-        params=_snowflake_params([fixture_id]),
+        params=_snowflake_params([fixture_id] * 3),
         ttl="30m",
     )
     return rows[OPTA_LINEUP_COLUMNS] if not rows.empty else pd.DataFrame(columns=OPTA_LINEUP_COLUMNS)
@@ -4432,18 +4489,16 @@ def load_opta_goal_events(season: str | None = None, team: str | None = None) ->
     if USE_MOCK_DATA:
         return pd.DataFrame(columns=columns)
 
+    fixture_filter, fixture_params = _opta_fixture_filter(season, team)
     clauses = ["e.TYPE_ID = 16"]
-    params: list[object] = []
-    if season:
-        season_key = _season_key(season)
-        start_year = season_key.split("/")[0]
-        if len(start_year) == 2 and start_year.isdigit():
-            start_year = f"20{start_year}"
-        clauses.append("TO_VARCHAR(f.SEASON) = ?")
-        params.append(start_year)
-    if team:
-        clauses.append("(f.HOME_TEAM_NAME = ? OR f.AWAY_TEAM_NAME = ?)")
-        params.extend([team, team])
+    if fixture_filter:
+        clauses.append(fixture_filter.replace("sf.", "f."))
+    teams_source, rosters_source = (
+        (_opta_season_fixture_slice(key, fixture_filter) for key in ("opta_teams_staging", "opta_rosters_staging"))
+        if fixture_filter
+        else (relation("opta_teams_staging"), relation("opta_rosters_staging"))
+    )
+    params = fixture_params * 3
 
     rows = get_connection().query(
         f"""
@@ -4456,10 +4511,10 @@ def load_opta_goal_events(season: str | None = None, team: str | None = None) ->
             e.EVENT_MINUTE AS "Minute",
             e.EVENT_SECOND AS "Second"
         FROM {relation("opta_events_staging")} e
-        JOIN {relation("opta_fixtures_raw")} f ON f.FIXTURE_ID = e.FIXTURE_ID
-        LEFT JOIN {relation("opta_teams_staging")} t
+        JOIN {_latest_opta_fixtures_sql()} f ON f.FIXTURE_ID = e.FIXTURE_ID
+        LEFT JOIN {teams_source} t
           ON t.FIXTURE_ID = e.FIXTURE_ID AND t.OPTA_TEAM_ID = e.OPTA_TEAM_ID
-        LEFT JOIN {relation("opta_rosters_staging")} r
+        LEFT JOIN {rosters_source} r
           ON r.FIXTURE_ID = e.FIXTURE_ID AND r.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
         WHERE {' AND '.join(clauses)}
         ORDER BY e.FIXTURE_ID, e.EVENT_MINUTE, e.EVENT_SECOND
@@ -4489,18 +4544,17 @@ def load_opta_substitutions(season: str | None = None, team: str | None = None) 
     if USE_MOCK_DATA:
         return pd.DataFrame(columns=SUBSTITUTION_COLUMNS)
 
+    fixture_filter, fixture_params = _opta_fixture_filter(season, team)
     clauses = ["(e.TYPE_ID IN (16, 18, 19) OR (e.TYPE_ID = 1 AND e.IS_ASSIST = 1))"]
-    params: list[object] = []
-    if season:
-        season_key = _season_key(season)
-        start_year = season_key.split("/")[0]
-        if len(start_year) == 2 and start_year.isdigit():
-            start_year = f"20{start_year}"
-        clauses.append("TO_VARCHAR(f.SEASON) = ?")
-        params.append(start_year)
-    if team:
-        clauses.append("(f.HOME_TEAM_NAME = ? OR f.AWAY_TEAM_NAME = ?)")
-        params.extend([team, team])
+    if fixture_filter:
+        clauses.append(fixture_filter.replace("sf.", "f."))
+    joined_keys = ("opta_teams_staging", "opta_rosters_staging", "opta_lineups_staging")
+    teams_source, rosters_source, lineups_source = (
+        (_opta_season_fixture_slice(key, fixture_filter) for key in joined_keys)
+        if fixture_filter
+        else (relation(key) for key in joined_keys)
+    )
+    params = fixture_params * 4
 
     raw = get_connection().query(
         f"""
@@ -4521,12 +4575,12 @@ def load_opta_substitutions(season: str | None = None, team: str | None = None) 
             l.POSITION_GROUP AS "Position Group",
             l.SUB_POSITION AS "Sub Position"
         FROM {relation("opta_events_staging")} e
-        JOIN {relation("opta_fixtures_raw")} f ON f.FIXTURE_ID = e.FIXTURE_ID
-        LEFT JOIN {relation("opta_teams_staging")} t
+        JOIN {_latest_opta_fixtures_sql()} f ON f.FIXTURE_ID = e.FIXTURE_ID
+        LEFT JOIN {teams_source} t
           ON t.FIXTURE_ID = e.FIXTURE_ID AND t.OPTA_TEAM_ID = e.OPTA_TEAM_ID
-        LEFT JOIN {relation("opta_rosters_staging")} r
+        LEFT JOIN {rosters_source} r
           ON r.FIXTURE_ID = e.FIXTURE_ID AND r.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
-        LEFT JOIN {relation("opta_lineups_staging")} l
+        LEFT JOIN {lineups_source} l
           ON l.FIXTURE_ID = e.FIXTURE_ID AND l.OPTA_PLAYER_ID = e.OPTA_PLAYER_ID
         WHERE {' AND '.join(clauses)}
         ORDER BY e.FIXTURE_ID, e.EVENT_MINUTE, e.EVENT_SECOND
