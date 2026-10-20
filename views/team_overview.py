@@ -177,7 +177,9 @@ def _inject_css() -> None:
         }
         .to-win { background: #1a9a5a; }
         .to-draw { background: #747A85; }
-        .to-loss { background: #111111; }
+        .to-loss { background: var(--red); }
+        /* Keeps red loss squares visible against the red masthead. */
+        .to-hero .to-form-pill { box-shadow: 0 0 0 2px rgb(255 255 255 / 90%); }
         .to-side { flex: 0 0 285px; }
         .to-side-label {
             color: rgba(255,255,255,.70);
