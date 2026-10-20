@@ -196,9 +196,11 @@ def require_cafc_login() -> None:
 require_cafc_login()
 
 # st.navigation draws the page list above any other sidebar content, so the
-# crest goes in the sidebar header via st.logo.
-if ui.BADGE_PATH.exists():
-    st.logo(str(ui.BADGE_PATH), size="large")
+# crest goes in the sidebar header via st.logo. Pass it as a data URI: a file
+# path is served from Streamlit's in-memory media store, whose URL can go
+# stale between runs and leave a broken image.
+if ui.badge_data_uri():
+    st.logo(ui.badge_data_uri(), size="large")
 
 if st.sidebar.button("Log out", icon=":material/logout:", width="stretch"):
     clear_cafc_auth_session()
