@@ -122,10 +122,10 @@ def _inject_css() -> None:
             display: inline-grid;
             filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
             flex: 0 0 auto;
-            height: 88px;
+            height: clamp(104px, 9.5vw, 140px);
             object-fit: contain;
             place-items: center;
-            width: 88px;
+            width: clamp(104px, 9.5vw, 140px);
         }
         .to-badge-fallback {
             background: var(--ss-panel);
@@ -392,7 +392,7 @@ def _inject_css() -> None:
             .to-hero-main { align-items: flex-start; flex-direction: column; }
             .to-side { flex: 1 1 auto; width: 100%; }
             .to-team-block { align-items: flex-start; flex-direction: column; }
-            .to-badge { height: 76px; width: 76px; }
+            .to-badge { height: 88px; width: 88px; }
         }
         </style>
         """,

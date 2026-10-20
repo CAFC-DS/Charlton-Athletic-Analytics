@@ -83,8 +83,8 @@ def require_cafc_login() -> None:
         }
 
         .cafc-login-badge {
-            width: 88px;
-            height: 88px;
+            width: 112px;
+            height: 112px;
             margin-bottom: 14px;
             object-fit: contain;
             filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
