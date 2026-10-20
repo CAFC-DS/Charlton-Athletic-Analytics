@@ -119,14 +119,11 @@ def _inject_css() -> None:
         }
         .to-team-block { align-items: center; display: flex; gap: 18px; min-width: 0; }
         .to-badge {
-            background: #fff;
-            border-radius: 50%;
-            box-shadow: 0 0 0 3px rgb(255 255 255 / 90%), 0 6px 18px rgb(0 0 0 / 35%);
             display: inline-grid;
+            filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
             flex: 0 0 auto;
             height: 88px;
             object-fit: contain;
-            padding: 8px;
             place-items: center;
             width: 88px;
         }

@@ -86,9 +86,8 @@ def require_cafc_login() -> None:
             width: 88px;
             height: 88px;
             margin-bottom: 14px;
-            border-radius: 50%;
-            background: #ffffff;
-            box-shadow: 0 0 0 3px rgb(255 255 255 / 90%), 0 6px 18px rgb(0 0 0 / 35%);
+            object-fit: contain;
+            filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
         }
         .cafc-login-eyebrow {
             font-size: 12px;

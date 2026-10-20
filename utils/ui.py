@@ -165,11 +165,15 @@ THEME_CSS = """
     padding-bottom: 4rem;
 }
 [data-testid="stSidebar"] { border-right: 0; }
-[data-testid="stSidebarHeader"] { padding-top: 20px; padding-bottom: 8px; }
+/* Crest centred in the sidebar header; the collapse button sits on top at the right. */
+[data-testid="stSidebarHeader"] {
+    position: relative; justify-content: center; padding-top: 22px; padding-bottom: 10px;
+}
+[data-testid="stLogoSpacer"] { display: none; }
+[data-testid="stSidebarCollapseButton"] { position: absolute; right: 10px; top: 14px; }
 [data-testid="stSidebarHeader"] img[data-testid="stSidebarLogo"], [data-testid="stSidebarHeader"] img {
-    height: 64px !important; max-height: 64px !important; width: auto;
-    border-radius: 50%; background: #fff;
-    box-shadow: 0 0 0 2px rgb(255 255 255 / 85%), 0 4px 14px rgb(0 0 0 / 45%);
+    height: 72px !important; max-height: 72px !important; width: auto;
+    filter: drop-shadow(0 4px 10px rgb(0 0 0 / 45%));
 }
 [data-testid="stSidebarNav"] a { border-radius: 8px; }
 [data-testid="stSidebarNav"] a[aria-current="page"] { background: var(--red); }
@@ -197,8 +201,8 @@ THEME_CSS = """
 }
 .cafc-brand { display: flex; align-items: center; gap: 20px; min-width: 0; }
 .cafc-badge {
-    width: 84px; height: 84px; flex: none; border-radius: 50%; background: #fff;
-    box-shadow: 0 0 0 3px rgb(255 255 255 / 90%), 0 6px 18px rgb(0 0 0 / 35%);
+    width: 84px; height: 84px; flex: none; object-fit: contain;
+    filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
 }
 .cafc-eyebrow {
     margin: 0 0 6px; font: 600 12px/1 var(--body);
